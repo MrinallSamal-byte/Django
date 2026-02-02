@@ -1,0 +1,74 @@
+Here is the comprehensive prompt structure adapted for a complete Django tutorial.
+
+Create a complete, structured Django tutorial covering web development fundamentals through advanced backend techniques for Python beginners.
+
+Content Structure
+42 topics organized in 9 parts: Setup & Architecture, Data Modeling, Views & Routing, Template Engine, User Input & Forms, Authentication, Advanced Features, Real-World Projects, Common Pitfalls.
+
+WHY/WHEN/HOW framework for 30 core topics explaining concepts, use cases, and implementation.
+
+90+ code examples with line-by-line explanations.
+
+35 practice exercises with progressive difficulty.
+
+Key Sections
+Setup & Architecture: Virtual environments, django-admin, project vs. app structure, the MVT (Model-View-Template) pattern.
+
+Data Modeling: models.py, field types, migrations (makemigrations/migrate), the Django ORM, and the Admin interface.
+
+Views & Routing: URL dispatching, function-based views (FBVs), HTTP responses, dynamic URL capturing.
+
+Template Engine: Rendering HTML, template inheritance (base/child), context variables, tags ({% for %}, {% if %}), and filters.
+
+User Input & Forms: The forms module, POST vs. GET, data validation, CSRF protection, and ModelForms.
+
+Authentication: User creation, login/logout logic, decorators (@login_required), permissions.
+
+Advanced Features: Class-Based Views (CBVs), static & media file handling, middleware basics, signals.
+
+Real-World Projects: Complete guides for a Blog, To-Do List, and an E-commerce Product Catalog.
+
+Common Pitfalls: Circular imports, N+1 query problems, exposing secret keys, static file confusion in production.
+
+Teaching Approach
+Real-life analogies: MVT as a Restaurant (Model=Inventory, View=Waiter, Template=Menu).
+
+Progressive complexity: "Hello World" → Dynamic Data → Database CRUD → Fully Secured App.
+
+Pattern: Concept explanation → minimal view/url example → full template integration → practice exercise.
+
+Example Structure
+Each topic follows WHY/WHEN/HOW:
+
+### 1️⃣ WHY - Why use Django Models? Maps Python objects to database tables without writing SQL, ensuring data integrity and structure.
+
+### 2️⃣ WHEN - When to use? When you need to persist user data, define relationships (One-to-Many, Many-to-Many), or structure business logic properties.
+
+### 3️⃣ HOW - Implementation
+
+Python
+from django.db import models
+
+class Product(models.Model):
+    name = models.CharField(max_length=200)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+### ✏️ Practice: Create a Book model with title, author, and publication date fields, then register it in admin.py.
+
+Projects Included
+Personal Blog: Markdown support, comment section, author profiles.
+
+Task Manager: CRUD operations, due dates, priority sorting, user-specific lists.
+
+E-commerce Dashboard: Product inventory grid, order status tracking, simple sales analytics.
+
+Comparison Section
+Django vs. Flask vs. FastAPI: "Batteries-included" vs. micro-frameworks.
+
+FBV vs. CBV: When to use functions vs. classes.
+
+SQL vs. ORM: Raw queries vs. Pythonic database abstraction.
