@@ -460,12 +460,12 @@ sudo chown -R $USER:$USER .
 ### Issue 4: Virtual Environment Already Exists
 ```bash
 # Remove existing venv
-rm -rf venv         # Linux/Mac
-rmdir /s venv       # Windows
+rm -rf venv            # Linux/Mac
+rmdir /s /q venv       # Windows
 
 # Create new one
-python3 -m venv venv  # Linux/Mac
-python -m venv venv   # Windows
+python3 -m venv venv   # Linux/Mac
+python -m venv venv    # Windows
 ```
 
 ---
