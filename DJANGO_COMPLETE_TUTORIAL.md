@@ -969,6 +969,9 @@ Error: That port is already in use.
 python manage.py runserver 8080
 
 # Or kill the process using port 8000
+# Try graceful shutdown first:
+lsof -ti:8000 | xargs kill
+# If process doesn't stop, force kill:
 lsof -ti:8000 | xargs kill -9
 ```
 
