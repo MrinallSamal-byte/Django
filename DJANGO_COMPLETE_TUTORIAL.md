@@ -151,16 +151,6 @@ Python 3.11.4
 
 ### Step 2: Create a Virtual Environment
 
-#### On Windows:
-```bash
-# Navigate to your project directory
-cd C:\projects\my_django_project
-
-# Create virtual environment named 'venv'
-python -m venv venv
-```
-
-#### On macOS/Linux:
 ```bash
 # Navigate to your project directory
 cd ~/projects/my_django_project
@@ -170,14 +160,14 @@ python3 -m venv venv
 ```
 
 **What happens here?**
-- `python -m venv`: Runs the venv module
+- `python3 -m venv`: Runs the venv module
 - `venv`: Name of the virtual environment folder (can be anything)
 
 **Directory structure created:**
 ```
 my_django_project/
 └── venv/
-    ├── bin/         # (Scripts/ on Windows) - executables
+    ├── bin/         # executables
     ├── include/     # C headers
     ├── lib/         # Installed packages
     └── pyvenv.cfg   # Configuration
@@ -187,17 +177,6 @@ my_django_project/
 
 ### Step 3: Activate the Virtual Environment
 
-#### On Windows (Command Prompt):
-```bash
-venv\Scripts\activate
-```
-
-#### On Windows (PowerShell):
-```bash
-venv\Scripts\Activate.ps1
-```
-
-#### On macOS/Linux:
 ```bash
 source venv/bin/activate
 ```
@@ -205,7 +184,7 @@ source venv/bin/activate
 **How to know it's activated?**
 Your terminal prompt will show `(venv)`:
 ```bash
-(venv) C:\projects\my_django_project>
+(venv) user@ubuntu:~/projects/my_django_project$
 ```
 
 ---
@@ -281,7 +260,7 @@ deactivate
 
 Your prompt returns to normal:
 ```bash
-C:\projects\my_django_project>
+user@ubuntu:~/projects/my_django_project$
 ```
 
 ---
@@ -292,10 +271,10 @@ On a new machine or for a team member:
 
 ```bash
 # 1. Create virtual environment
-python -m venv venv
+python3 -m venv venv
 
 # 2. Activate it
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+source venv/bin/activate
 
 # 3. Install dependencies
 pip install -r requirements.txt
@@ -316,10 +295,10 @@ mkdir my_first_django_app
 cd my_first_django_app
 
 # 2. Create virtual environment
-python -m venv venv
+python3 -m venv venv
 
 # 3. Activate virtual environment
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # 4. Upgrade pip (recommended)
 pip install --upgrade pip
@@ -367,21 +346,7 @@ sqlparse==0.4.4
 python3 -m venv venv
 ```
 
-### Issue 2: PowerShell Script Execution Error (Windows)
-```
-venv\Scripts\Activate.ps1 cannot be loaded because running scripts is disabled
-```
-
-**Solution:**
-```powershell
-# Run PowerShell as Administrator
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-
-# Then activate
-venv\Scripts\Activate.ps1
-```
-
-### Issue 3: Permission Denied (macOS/Linux)
+### Issue 2: Permission Denied
 ```bash
 # Make sure you have write permissions
 ls -la
@@ -390,14 +355,13 @@ ls -la
 sudo chown -R $USER:$USER .
 ```
 
-### Issue 4: Virtual Environment Already Exists
+### Issue 3: Virtual Environment Already Exists
 ```bash
 # Remove existing venv
-rm -rf venv  # Linux/macOS
-rmdir /s venv  # Windows
+rm -rf venv
 
 # Create new one
-python -m venv venv
+python3 -m venv venv
 ```
 
 ---
@@ -603,7 +567,7 @@ Without it, you'd have to manually create dozens of files and configurations!
 
 ```bash
 # Activate your virtual environment first!
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Check django-admin is available
 django-admin --version
@@ -1005,8 +969,7 @@ Error: That port is already in use.
 python manage.py runserver 8080
 
 # Or kill the process using port 8000
-# Windows: netstat -ano | findstr :8000
-# Linux/Mac: lsof -ti:8000 | xargs kill -9
+lsof -ti:8000 | xargs kill -9
 ```
 
 ---
