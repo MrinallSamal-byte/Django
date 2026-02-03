@@ -140,8 +140,13 @@ cd Django
 # Read DJANGO_COMPLETE_TUTORIAL.md in your favorite editor or viewer
 
 # Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv venv  # Linux/Mac
+python -m venv venv   # Windows
+
+# Activate virtual environment
+source venv/bin/activate      # Linux/Mac
+venv\Scripts\activate         # Windows (Command Prompt)
+venv\Scripts\Activate.ps1     # Windows (PowerShell)
 
 # Install Django
 pip install django
