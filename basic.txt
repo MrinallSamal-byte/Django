@@ -1,0 +1,6 @@
+Start Environment : python -m venv env
+Install Django : pip install django
+Create Project : django-admin startproject <name> .
+Create App : python manage.py startapp <name>
+Update DB : python manage.py migrate
+Launch : python manage.py runserver
