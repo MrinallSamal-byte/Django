@@ -4326,7 +4326,7 @@ class CustomUser(AbstractUser):
                                      blank=True)
 
     USERNAME_FIELD = 'email'                           #   use email instead of username for login
-    REQUIRED_FIELDS = ['username']                     #   fields prompted by createsuperuser (besides USERNAME_FIELD & password)
+    REQUIRED_FIELDS = ['username']                     #   fields prompted by createsuperuser (in addition to USERNAME_FIELD and password, which are always required)
 
     def __str__(self):
         return self.email
@@ -5154,7 +5154,7 @@ In the Django admin, go to **Redisboard → Redis Servers → Add**. Enter:
 - **Port:** `6379`
 - **Password:** (leave blank for local, or enter your Redis password)
 
-Click **Inspect** on a configured server to see:
+Click the **Inspect** button next to the server entry in the Redis Servers list to see:
 
 | Panel | What It Shows |
 |---|---|
@@ -7935,7 +7935,7 @@ Display in templates:
 // It loads your full script from your Django server.
 javascript:(function(){
   var s=document.createElement('script');               //   create a <script> tag
-  s.src='https://yourapp.com/static/js/bookmarklet.js?' //   point to your hosted JS
+  s.src='https://yourapp.com/static/js/bookmarklet.js?' //   point to your hosted JS (must use https://)
        + new Date().getTime();                          //   cache-bust so updates are instant
   document.head.appendChild(s);                         //   inject the script into the current page
 })();
@@ -8033,7 +8033,7 @@ def image_create(request):
                   {'form': form, 'section': 'images'})
 ```
 
-> ⚠️ **CSRF Note:** Since the bookmarklet submits from an external site, the normal `{% csrf_token %}` won't be available. For bookmarklets, you can either use `@csrf_exempt` on the view (less secure) or have the bookmarklet first fetch a page from your app to obtain the CSRF token via cookies. For authenticated users, Django's session cookie handles identity.
+> ⚠️ **CSRF Note:** Since the bookmarklet submits from an external site, the normal `{% csrf_token %}` won't be available. Using `@csrf_exempt` on the view **removes CSRF protection entirely**, making the endpoint vulnerable to cross-site request forgery attacks — avoid this in production. The recommended approach is to have the bookmarklet first fetch a page from your app to obtain the CSRF token via cookies, then include that token in subsequent POST requests. For authenticated users, Django's session cookie handles identity.
 
 ### Asynchronous JavaScript with Django
 
@@ -9123,7 +9123,7 @@ class Content(models.Model):
 class ItemBase(models.Model):
     """Abstract base for all content types."""
     owner = models.ForeignKey(settings.AUTH_USER_MODEL,
-                              related_name='%(class)s_related', #  generates unique related names per subclass
+                              related_name='%(class)s_related', #  generates unique related names per subclass (text_related, image_related, etc.)
                               on_delete=models.CASCADE)
     title = models.CharField(max_length=250)
     created = models.DateTimeField(auto_now_add=True)
@@ -9153,11 +9153,11 @@ class Video(ItemBase):
 ```html
 <!-- templates/courses/module_content_list.html -->
 {% for content in module.contents.all %}
-  {% with item=content.item %}
+  {% with item=content.item item_type=content.content_type %}
     <div class="content-item">
       <h3>{{ item.title }}</h3>
       <!-- Each content type has its own template fragment -->
-      {% include "courses/content/"item_type".html" %}
+      {% include "courses/content/"|add:item_type|add:".html" %}
     </div>
   {% endwith %}
 {% endfor %}
