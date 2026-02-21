@@ -57,15 +57,15 @@ The full tutorial is in [TUTORIAL.md](TUTORIAL.md). It covers the following part
 
 | Part | Topic | Link |
 |------|-------|------|
-| 1 | **Basics** — Django introduction, environment setup, project structure | [Part 1: Basics](TUTORIAL.md#part-1-basics) |
-| 2 | **Models and Databases** — MySQL configuration, models, migrations, ORM | [Part 2: Models and Databases](TUTORIAL.md#part-2-models-and-databases) |
-| 3 | **Views and URLs** — Function-based views, class-based views, URL routing | [Part 3: Views and URLs](TUTORIAL.md#part-3-views-and-urls) |
-| 4 | **Templates** — Template language, inheritance, static files | [Part 4: Templates](TUTORIAL.md#part-4-templates) |
-| 5 | **Forms and Validation** — Django forms, ModelForms, custom validation | [Part 5: Forms and Validation](TUTORIAL.md#part-5-forms-and-validation) |
-| 6 | **Authentication and Authorization** — Users, login/logout, permissions | [Part 6: Authentication and Authorization](TUTORIAL.md#part-6-authentication-and-authorization) |
-| 7 | **Django Admin** — Registering models, customizing the admin interface | [Part 7: Django Admin](TUTORIAL.md#part-7-django-admin) |
-| 8 | **REST APIs** — Django REST Framework, serializers, viewsets | [Part 8: REST APIs with Django REST Framework](TUTORIAL.md#part-8-rest-apis-with-django-rest-framework) |
-| 9 | **Testing** — Unit tests, integration tests, testing with MySQL | [Part 9: Testing](TUTORIAL.md#part-9-testing) |
-| 10 | **Deployment** — Production settings, Gunicorn, Nginx | [Part 10: Deployment](TUTORIAL.md#part-10-deployment) |
+| 1 | **Basics** — Django introduction, MVT architecture, framework comparison | [Part 1: Basics](TUTORIAL.md#part-1-basics) |
+| 2 | **Installation & Setup** — Python, virtual environments, MySQL configuration | [Part 2: Installation & Setup](TUTORIAL.md#part-2-installation--setup) |
+| 3 | **Django Fundamentals** — Projects vs apps, settings, URL routing | [Part 3: Django Fundamentals](TUTORIAL.md#part-3-django-fundamentals) |
+| 4 | **Models & Databases** — Models, fields, relationships, migrations, QuerySet API | [Part 4: Models & Databases](TUTORIAL.md#part-4-models--databases) |
+| 5 | **Views & Templates** — FBVs, CBVs, template language, inheritance, static files | [Part 5: Views & Templates](TUTORIAL.md#part-5-views--templates) |
+| 6 | **Forms & User Input** — Django forms, ModelForms, validation, file uploads | [Part 6: Forms & User Input](TUTORIAL.md#part-6-forms--user-input) |
+| 7 | **Authentication & Security** — Users, permissions, CSRF/XSS protection, HTTPS | [Part 7: Authentication & Security](TUTORIAL.md#part-7-authentication--security) |
+| 8 | **Performance Optimization** — Query optimization, caching, pagination, indexing | [Part 8: Performance Optimization](TUTORIAL.md#part-8-performance-optimization) |
+| 9 | **Advanced Features** — DRF, signals, management commands, middleware, Celery | [Part 9: Advanced Features](TUTORIAL.md#part-9-advanced-features) |
+| 10 | **Real-World Projects & Deployment** — Task manager, blog, Gunicorn, Docker | [Part 10: Real-World Projects & Deployment](TUTORIAL.md#part-10-real-world-projects--deployment) |
 
-Additional sections: [Exercises](TUTORIAL.md#exercises) · [Projects](TUTORIAL.md#projects) · [Cheat Sheet](TUTORIAL.md#cheat-sheet) · [Further Reading](TUTORIAL.md#further-reading)
+Additional sections: [Practice Exercises](TUTORIAL.md#practice-exercises) · [Cheat Sheet](TUTORIAL.md#cheat-sheet) · [Further Reading](TUTORIAL.md#further-reading)
