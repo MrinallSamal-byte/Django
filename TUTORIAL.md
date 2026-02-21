@@ -56,6 +56,7 @@
   - [HTTPS and Security Middleware](#https-and-security-middleware)
   - [Built-in Authentication Views](#built-in-authentication-views)
   - [User Profiles and Extending the User Model](#user-profiles-and-extending-the-user-model)
+  - [Custom User Model](#custom-user-model)
   - [Custom Authentication Backends](#custom-authentication-backends)
   - [Social Authentication](#social-authentication)
 - [Part 8: Performance Optimization](#part-8-performance-optimization)
@@ -64,15 +65,21 @@
   - [Pagination](#pagination)
   - [Database Indexing](#database-indexing)
   - [Redis](#redis)
+  - [Monitoring Redis with Django Redisboard](#monitoring-redis-with-django-redisboard)
   - [Memcached](#memcached)
   - [Cache Levels](#cache-levels)
   - [Django Debug Toolbar](#django-debug-toolbar)
 - [Part 9: Advanced Features](#part-9-advanced-features)
   - [Django REST Framework](#django-rest-framework)
+  - [DRF Parsers and Renderers](#drf-parsers-and-renderers)
+  - [Nested Serializers in DRF](#nested-serializers-in-drf)
+  - [Serializer Method Fields in DRF](#serializer-method-fields-in-drf)
   - [Signals](#signals)
+  - [Denormalizing Counts with Signals](#denormalizing-counts-with-signals)
   - [Custom Management Commands](#custom-management-commands)
   - [Middleware](#middleware)
   - [Celery and Async Tasks](#celery-and-async-tasks)
+  - [Monitoring Celery with Flower](#monitoring-celery-with-flower)
   - [Internationalization](#internationalization)
     - [Rosetta Translation Interface](#rosetta-translation-interface)
     - [Translating Models with django-parler](#translating-models-with-django-parler)
@@ -90,7 +97,9 @@
   - [Image Handling and Thumbnails](#image-handling-and-thumbnails)
   - [Django Channels and WebSockets](#django-channels-and-websockets)
   - [Building a Follow System](#building-a-follow-system)
+  - [Bookmarklet with JavaScript](#bookmarklet-with-javascript)
   - [Asynchronous JavaScript with Django](#asynchronous-javascript-with-django)
+  - [Reordering Modules via AJAX](#reordering-modules-via-ajax)
   - [Coupon System](#coupon-system)
   - [Recommendation Engine](#recommendation-engine)
   - [Extending the Admin Site](#extending-the-admin-site)
@@ -98,6 +107,8 @@
   - [Project: Task Manager](#project-task-manager)
   - [Project: Blog Platform](#project-blog-platform)
   - [Project: E-Commerce Store](#project-e-commerce-store)
+  - [E-Learning Platform Project](#e-learning-platform-project)
+  - [Student Registration and Enrollment](#student-registration-and-enrollment)
   - [Deploying with Gunicorn and Nginx](#deploying-with-gunicorn-and-nginx)
   - [Docker Deployment](#docker-deployment)
   - [Managing Settings for Multiple Environments](#managing-settings-for-multiple-environments)
@@ -4285,6 +4296,104 @@ class ProfileAdmin(admin.ModelAdmin):
     #   Much faster when you have thousands of users
 ```
 
+
+### Custom User Model
+
+> 💡 **Analogy:** Extending the user with a Profile (OneToOneField) is like bolting a sidecar onto a motorcycle — it works, but the sidecar is a separate piece. A **custom user model** is like designing the motorcycle from scratch with the extra seat built in. Everything lives in one table, one query, one object.
+
+1️⃣ **WHY** — Django's built-in `User` model assumes a `username` login, 150-char limit, and a fixed set of fields. Many real-world apps need **email-based login**, extra fields (phone, avatar, role), or different permissions logic. A custom user model lets you change the authentication table itself, rather than patching around it with a separate Profile table. It eliminates the extra JOIN needed when you use a OneToOne Profile, and it gives you full control over how authentication works.
+
+2️⃣ **WHEN** — You should define a custom user model **at the very start of every new Django project**, even if you think the default is fine today. Django's documentation explicitly recommends this. If you've already run `migrate` with the default user, switching later requires manual database surgery (or a fresh database). So do it first — before any migrations exist.
+
+3️⃣ **HOW** — There are two base classes to choose from:
+
+| Base Class | Use Case |
+|---|---|
+| `AbstractUser` | Keep the default fields + auth logic, just **add** fields |
+| `AbstractBaseUser` | Replace **everything** — you define the fields, the required fields, and the login field |
+
+**Approach A — `AbstractUser` (most common):**
+
+```python
+# accounts/models.py
+from django.contrib.auth.models import AbstractUser  #   built-in base with all default fields
+from django.db import models
+
+class CustomUser(AbstractUser):
+    email = models.EmailField(unique=True)            #   make email unique so we can log in with it
+    bio = models.TextField(blank=True)                 #   extra field not in the default User
+    date_of_birth = models.DateField(null=True,        #   another custom field
+                                     blank=True)
+
+    USERNAME_FIELD = 'email'                           #   use email instead of username for login
+    REQUIRED_FIELDS = ['username']                     #   fields prompted by createsuperuser (besides USERNAME_FIELD & password)
+
+    def __str__(self):
+        return self.email
+```
+
+```python
+# settings.py
+AUTH_USER_MODEL = 'accounts.CustomUser'               #   tell Django to use our model instead of auth.User
+```
+
+```python
+# accounts/admin.py
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin       #   reuse the built-in admin form
+from .models import CustomUser
+
+@admin.register(CustomUser)
+class CustomUserAdmin(UserAdmin):
+    list_display = ('email', 'username', 'is_staff')  #   show email first in the admin list
+    ordering = ('email',)                              #   order by email instead of username
+    fieldsets = UserAdmin.fieldsets + (                 #   add our custom fields to the admin form
+        ('Extra Info', {'fields': ('bio', 'date_of_birth')}),
+    )
+```
+
+**Approach B — `AbstractBaseUser` (full control):**
+
+```python
+# accounts/models.py
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
+
+class CustomUserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra):
+        if not email:
+            raise ValueError('Email is required')      #   enforce email at the manager level
+        email = self.normalize_email(email)             #   lowercase the domain part
+        user = self.model(email=email, **extra)
+        user.set_password(password)                     #   hash the password — never store plain text
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra):
+        extra.setdefault('is_staff', True)
+        extra.setdefault('is_superuser', True)
+        return self.create_user(email, password, **extra)
+
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    email = models.EmailField(unique=True)              #   the only login identifier
+    name = models.CharField(max_length=150)
+    is_active = models.BooleanField(default=True)       #   required by Django's auth backend
+    is_staff = models.BooleanField(default=False)       #   required for admin access
+
+    objects = CustomUserManager()                        #   wire up our custom manager
+
+    USERNAME_FIELD = 'email'                             #   field used for authentication
+    REQUIRED_FIELDS = ['name']                           #   prompted by createsuperuser
+```
+
+> ⚠️ **Critical:** Set `AUTH_USER_MODEL` before running `python manage.py migrate` for the first time. Changing it after migrations exist is extremely painful. Throughout your project, reference the user model with `get_user_model()` or `settings.AUTH_USER_MODEL` — never hard-code `auth.User`.
+
+```python
+# Anywhere you need to reference the user model:
+from django.contrib.auth import get_user_model
+User = get_user_model()                                  #   returns whatever AUTH_USER_MODEL points to
+```
+
 ### Custom Authentication Backends
 
 > 💡 **Analogy:** Django's authentication backend is like the **lock mechanism** on your front door. The default lock (username + password) works fine, but you can swap it for a fingerprint scanner (email login), a key card (token auth), or even have multiple locks that any one of them can open. Django tries each backend in order until one succeeds.
@@ -5006,6 +5115,56 @@ value = cache.get('my_key')
 
 ---
 
+
+### Monitoring Redis with Django Redisboard
+
+> 💡 **Analogy:** Redisboard is like a window into your Redis server's brain — you can see every key, its type, value, TTL, and memory usage, all from within the familiar Django admin interface.
+
+1️⃣ **WHY** — When using Redis for caching, session storage, or Celery message brokering, you often need to inspect what's actually stored in Redis. Is a key missing? Is a cache value stale? How much memory is Redis using? **django-redisboard** adds Redis server inspection directly to your Django admin, so you don't need to SSH into your server and use the `redis-cli`.
+
+2️⃣ **WHEN** — Install Redisboard in development and staging environments where you need to debug Redis contents. It's also useful in production for quick inspections, though you should restrict admin access carefully.
+
+3️⃣ **HOW** — Installation takes just three steps:
+
+```bash
+pip install django-redisboard                              #   install the package
+```
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    # ... other apps ...
+    'redisboard',                                          #   add to installed apps
+]
+```
+
+After adding it to `INSTALLED_APPS`, run migrations and visit the Django admin:
+
+```bash
+python manage.py migrate                                   #   creates the redisboard tables
+python manage.py runserver
+# Visit http://127.0.0.1:8000/admin/ → Redis Servers
+```
+
+**Configure a Redis server in the admin:**
+
+In the Django admin, go to **Redisboard → Redis Servers → Add**. Enter:
+- **Label:** `Local Redis` (any descriptive name)
+- **Hostname:** `127.0.0.1` (or your Redis host)
+- **Port:** `6379`
+- **Password:** (leave blank for local, or enter your Redis password)
+
+Click **Inspect** on a configured server to see:
+
+| Panel | What It Shows |
+|---|---|
+| **Server Info** | Redis version, uptime, connected clients, memory usage |
+| **Keyspace** | All databases and their key counts |
+| **Key Inspector** | Browse keys by pattern, view type/value/TTL for each key |
+| **Memory** | Detailed memory breakdown and fragmentation ratio |
+
+> ⚠️ **Security:** Redisboard shows raw Redis data, which may include session tokens, cached user data, or Celery task payloads. Restrict admin access in production with strong authentication and IP whitelisting.
+
 ### Memcached
 
 > 💡 **Analogy:** Memcached is like a **coat check at a theater** — you hand over your coat (data), get a ticket (key), and retrieve it later instantly. It's simple, fast, and purpose-built for one job: temporary storage. It doesn't sort your coats, count them, or remember them after closing time. Redis, by contrast, is a full cloakroom with numbered shelves, a logbook, and overnight storage.
@@ -5551,6 +5710,291 @@ posts = response.json()
 
 > **Tip:** DRF includes a **browsable API** — visit `/api/posts/` in your browser to see an interactive HTML interface where you can test endpoints, submit forms, and inspect responses without writing any client code.
 
+
+### DRF Parsers and Renderers
+
+> 💡 **Analogy:** Parsers are like **translators at the front desk** — they read incoming requests in different languages (JSON, form data, XML) and convert them into Python data your views can understand. Renderers are the **translators at the exit** — they take your Python response and convert it into whatever format the client requested.
+
+1️⃣ **WHY** — Django REST Framework handles content negotiation automatically, but understanding parsers and renderers lets you: support multiple input/output formats (JSON, XML, HTML), optimize performance by disabling formats you don't need, handle file uploads through multipart parsers, and customize the browsable API. When a client sends `Content-Type: application/json`, DRF uses the JSON parser. When a client sends `Accept: text/html`, DRF uses the browsable API renderer.
+
+2️⃣ **WHEN** — Configure parsers when your API needs to accept formats beyond JSON (e.g., file uploads need `MultiPartParser`). Configure renderers when you want to control output formats — for example, disabling the browsable API in production for security, or adding XML support for legacy clients.
+
+3️⃣ **HOW** — Set defaults globally in settings, then override per-view as needed.
+
+**Global configuration in settings:**
+
+```python
+# settings.py
+REST_FRAMEWORK = {
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',               #   parse JSON request bodies
+        'rest_framework.parsers.FormParser',               #   parse HTML form submissions
+        'rest_framework.parsers.MultiPartParser',          #   parse file uploads (multipart/form-data)
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',           #   render responses as JSON
+        'rest_framework.renderers.BrowsableAPIRenderer',   #   render the interactive HTML API browser
+    ],
+}
+```
+
+**Per-view override:**
+
+```python
+# api/views.py
+from rest_framework.parsers import JSONParser, MultiPartParser
+from rest_framework.renderers import JSONRenderer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+class CourseUploadView(APIView):
+    parser_classes = [JSONParser, MultiPartParser]         #   this view accepts JSON and file uploads
+    renderer_classes = [JSONRenderer]                      #   this view only returns JSON (no browsable API)
+
+    def post(self, request):
+        data = request.data                                #   DRF parses the body using the matching parser
+        return Response({'status': 'received',
+                         'content_type': request.content_type})
+```
+
+**Disabling the browsable API in production:**
+
+```python
+# settings.py (production)
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',           #   only JSON — no HTML browsable API
+    ],
+}
+```
+
+**Custom content negotiation example:**
+
+```python
+# api/views.py
+from rest_framework.decorators import api_view, renderer_classes
+from rest_framework.renderers import JSONRenderer, StaticHTMLRenderer
+from rest_framework.response import Response
+
+@api_view(['GET'])
+@renderer_classes([JSONRenderer, StaticHTMLRenderer])      #   support both JSON and plain HTML
+def course_summary(request, pk):
+    course = Course.objects.get(pk=pk)
+    if request.accepted_renderer.format == 'html':         #   check what the client requested
+        return Response(f'<h1>{course.title}</h1>')        #   return raw HTML
+    return Response({                                      #   return JSON by default
+        'title': course.title,
+        'student_count': course.students.count()
+    })
+```
+
+| Default Parser | Content-Type Handled |
+|---|---|
+| `JSONParser` | `application/json` |
+| `FormParser` | `application/x-www-form-urlencoded` |
+| `MultiPartParser` | `multipart/form-data` |
+
+| Default Renderer | Accept / Format |
+|---|---|
+| `JSONRenderer` | `application/json` |
+| `BrowsableAPIRenderer` | `text/html` (the interactive web UI) |
+
+### Nested Serializers in DRF
+
+> 💡 **Analogy:** A nested serializer is like a **Russian nesting doll** — when you open the Course doll, you find Module dolls inside, and inside each Module you might find Content dolls. Each level has its own shape (fields), and DRF assembles or disassembles the whole thing automatically.
+
+1️⃣ **WHY** — APIs often need to return related objects in a single response. Instead of returning a course with just module IDs (forcing the client to make N extra requests), a nested serializer embeds the full module data **inside** the course response. This reduces HTTP round-trips and makes the API easier to consume. For write operations, nested serializers let clients create a course and its modules in a single POST request.
+
+2️⃣ **WHEN** — Use nested serializers when: (a) the client always needs the related data together, (b) you want to reduce API calls, (c) you need to create/update parent and child objects in one request. Avoid deep nesting (3+ levels) as it makes responses large and write logic complex.
+
+3️⃣ **HOW** — Define the child serializer, then embed it in the parent.
+
+**Read-only nested serializer (the simple case):**
+
+```python
+# api/serializers.py
+from rest_framework import serializers
+from courses.models import Course, Module, Subject
+
+class ModuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Module
+        fields = ['id', 'title', 'description', 'order']      #   fields to include for each module
+
+class CourseSerializer(serializers.ModelSerializer):
+    modules = ModuleSerializer(many=True, read_only=True)      #   embed all related modules
+    subject = serializers.StringRelatedField()                 #   show subject.__str__() instead of PK
+
+    class Meta:
+        model = Course
+        fields = ['id', 'subject', 'title', 'slug',
+                  'overview', 'created', 'modules']            #   modules appears as a nested array
+```
+
+**Response shape:**
+```json
+{
+  "id": 1,
+  "subject": "Computer Science",
+  "title": "Django Masterclass",
+  "slug": "django-masterclass",
+  "overview": "Learn Django from scratch.",
+  "created": "2024-01-15T10:30:00Z",
+  "modules": [
+    {"id": 1, "title": "Getting Started", "description": "...", "order": 0},
+    {"id": 2, "title": "Models", "description": "...", "order": 1}
+  ]
+}
+```
+
+**Using `depth` for quick nesting (read-only):**
+
+```python
+class CourseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Course
+        fields = ['id', 'subject', 'title', 'modules']
+        depth = 1                                              #   auto-nest one level of related objects
+        # depth = 2 would also expand relations inside modules
+```
+
+> ⚠️ `depth` is convenient but includes **all** fields of related models and offers no control over which fields appear. Use explicit nested serializers for production APIs.
+
+**Writable nested serializer (create course + modules in one request):**
+
+```python
+# api/serializers.py
+class CourseCreateSerializer(serializers.ModelSerializer):
+    modules = ModuleSerializer(many=True)                      #   accept module data in the request body
+
+    class Meta:
+        model = Course
+        fields = ['subject', 'title', 'slug',
+                  'overview', 'modules']
+
+    def create(self, validated_data):
+        modules_data = validated_data.pop('modules')           #   extract module data before creating course
+        course = Course.objects.create(**validated_data)        #   create the course first
+        for module_data in modules_data:
+            Module.objects.create(course=course,               #   create each module linked to the course
+                                 **module_data)
+        return course
+```
+
+**POST request body:**
+```json
+{
+  "subject": 1,
+  "title": "New Course",
+  "slug": "new-course",
+  "overview": "A great course.",
+  "modules": [
+    {"title": "Intro", "description": "First module", "order": 0},
+    {"title": "Basics", "description": "Second module", "order": 1}
+  ]
+}
+```
+
+### Serializer Method Fields in DRF
+
+> 💡 **Analogy:** A `SerializerMethodField` is like a **calculated column in a spreadsheet** — it doesn't exist in the database, but it's computed on the fly from other data whenever the serializer runs. Think formulas, not stored values.
+
+1️⃣ **WHY** — Not every field in an API response maps directly to a database column. You often need **computed fields**: how many days since a course was published, a user's full name derived from first + last name, the total enrollment count, or a human-readable status label. `SerializerMethodField` lets you add these derived fields to your serializer without changing your model.
+
+2️⃣ **WHEN** — Use `SerializerMethodField` when you need to: (a) combine multiple model fields into one API field, (b) compute a value from related objects, (c) format data differently for the API than it's stored in the database, or (d) add conditional logic to a field's value. It's read-only by default, which is perfect for display-only computed data.
+
+3️⃣ **HOW** — Declare the field on the serializer and implement a `get_<field_name>` method.
+
+**Example: Days since published:**
+
+```python
+# api/serializers.py
+from rest_framework import serializers
+from django.utils import timezone
+from courses.models import Course
+
+class CourseDetailSerializer(serializers.ModelSerializer):
+    days_since_published = serializers.SerializerMethodField() #   declare a computed field
+
+    class Meta:
+        model = Course
+        fields = ['id', 'title', 'created',
+                  'days_since_published']
+
+    def get_days_since_published(self, obj):                   #   method name MUST be get_<field_name>
+        delta = timezone.now() - obj.created                   #   obj is the Course instance being serialized
+        return delta.days                                      #   return the computed value
+```
+
+**Example: Full name from first + last:**
+
+```python
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()            #   not a database column
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'full_name']
+
+    def get_full_name(self, obj):
+        return f'{obj.first_name} {obj.last_name}'.strip()    #   combine two fields into one
+```
+
+**Example: Enrollment count:**
+
+```python
+class CourseListSerializer(serializers.ModelSerializer):
+    enrollment_count = serializers.SerializerMethodField()     #   count of enrolled students
+    is_enrolled = serializers.SerializerMethodField()          #   whether the requesting user is enrolled
+
+    class Meta:
+        model = Course
+        fields = ['id', 'title', 'overview',
+                  'enrollment_count', 'is_enrolled']
+
+    def get_enrollment_count(self, obj):
+        return obj.students.count()                            #   counts the ManyToMany relation
+
+    def get_is_enrolled(self, obj):
+        request = self.context.get('request')                  #   access the request from serializer context
+        if request and request.user.is_authenticated:
+            return obj.students.filter(
+                id=request.user.id                             #   check if current user is in the students list
+            ).exists()
+        return False
+```
+
+**Using it in a view (passing context):**
+
+```python
+# api/views.py
+from rest_framework.generics import ListAPIView
+
+class CourseListView(ListAPIView):
+    queryset = Course.objects.all()
+    serializer_class = CourseListSerializer                     #   DRF auto-passes request in context
+
+    # If you need to pass context manually:
+    # serializer = CourseListSerializer(courses, many=True,
+    #                                   context={'request': request})
+```
+
+**Response shape:**
+```json
+{
+  "id": 1,
+  "title": "Django Masterclass",
+  "overview": "Learn Django from scratch.",
+  "enrollment_count": 42,
+  "is_enrolled": true
+}
+```
+
+> 💡 **Performance tip:** If `get_enrollment_count` is called for a list of courses, it triggers one query per course (N+1 problem). Fix this by using `annotate()` in the queryset: `Course.objects.annotate(enrollment_count=Count('students'))` and then accessing `obj.enrollment_count` directly instead of calling `.count()`.
+
 ### Signals
 
 1️⃣ **WHY** — Signals allow decoupled components to react to events (e.g., auto-create a profile when a user is created).
@@ -5588,6 +6032,78 @@ class AccountsConfig(AppConfig):
         import accounts.signals
         #   Import signals module so @receiver decorators are registered
 ```
+
+
+### Denormalizing Counts with Signals
+
+> 💡 **Analogy:** Imagine a library that counts its books by physically walking through every shelf each time someone asks "how many books do you have?" That's a `COUNT(*)` query. **Denormalization** is posting a running total on the front door and updating it whenever a book is added or removed — much faster to read, at the cost of keeping the sign in sync.
+
+1️⃣ **WHY** — In a social app, displaying how many likes an image has is extremely common. Running `image.likes.count()` every time triggers a `COUNT(*)` SQL query that scans the join table. On a page showing 50 images, that's 50 extra queries. Storing a `total_likes` integer directly on the `Image` model means you read **one column** instead of counting rows. This is called **denormalization** — storing redundant data for read performance.
+
+2️⃣ **WHEN** — Denormalize a count when: (a) the count is displayed frequently (list pages, feeds), (b) the related table is large, and (c) writes (likes/unlikes) are far less frequent than reads. Don't denormalize if the data changes extremely rapidly or if strong consistency is critical — the signal-based approach can briefly be out of sync under heavy concurrent writes.
+
+3️⃣ **HOW** — Use Django's `post_save` and `post_delete` signals on the `Like` model to increment/decrement the counter on `Image`.
+
+```python
+# images/models.py
+from django.db import models
+from django.conf import settings
+
+class Image(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,
+                             on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    total_likes = models.PositiveIntegerField(default=0)  #   denormalized counter — avoids COUNT(*) queries
+
+    def __str__(self):
+        return self.title
+
+class Like(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,
+                             on_delete=models.CASCADE)
+    image = models.ForeignKey(Image,
+                              related_name='likes',
+                              on_delete=models.CASCADE)
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'image')               #   one like per user per image
+```
+
+```python
+# images/signals.py
+from django.db.models.signals import post_save, post_delete  #   fire after save/delete completes
+from django.dispatch import receiver
+from django.db.models import F
+from .models import Like, Image
+
+@receiver(post_save, sender=Like)                             #   runs after a Like is created
+def like_created(sender, instance, created, **kwargs):
+    if created:                                               #   only on creation, not updates
+        Image.objects.filter(pk=instance.image_id).update(
+            total_likes=F('total_likes') + 1                  #   atomic increment — safe from race conditions
+        )
+
+@receiver(post_delete, sender=Like)                           #   runs after a Like is deleted
+def like_deleted(sender, instance, **kwargs):
+    Image.objects.filter(pk=instance.image_id).update(
+        total_likes=F('total_likes') - 1                      #   atomic decrement
+    )
+```
+
+```python
+# images/apps.py
+from django.apps import AppConfig
+
+class ImagesConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'images'
+
+    def ready(self):
+        import images.signals                                 #   register signals when the app starts
+```
+
+> ⚠️ **Trade-off:** Denormalization speeds up reads but adds complexity. If signals fail silently or bulk operations bypass signals (`QuerySet.delete()` does **not** trigger `post_delete` for each object), your counter drifts. Consider a periodic management command to recalculate counts as a safety net.
 
 ### Custom Management Commands
 
@@ -5746,6 +6262,58 @@ def publish_post(request, pk):
 
     return redirect('blog:post_detail', pk=post.pk)
 ```
+
+
+### Monitoring Celery with Flower
+
+> 💡 **Analogy:** Running Celery without Flower is like running a factory with no dashboard — you know work is happening, but you can't see which machines are busy, which jobs failed, or how long things take. Flower gives you the factory floor monitor.
+
+1️⃣ **WHY** — Celery processes tasks asynchronously in the background, which means failures are invisible unless you check logs. **Flower** is a real-time web-based monitor that shows you: active workers, task success/failure rates, task execution time, queue lengths, and lets you inspect individual task arguments and results. It's essential for debugging and production observability.
+
+2️⃣ **WHEN** — Install Flower as soon as you start using Celery in any project. In development it helps you verify tasks are running and debug failures. In production it's critical for monitoring health, spotting bottlenecks, and alerting on task failures.
+
+3️⃣ **HOW** — Install and run Flower alongside your Celery workers:
+
+```bash
+# Install Flower
+pip install flower                                        #   Flower is a separate package from Celery
+
+# Start Flower (assumes your Celery app is in myproject.celery)
+celery -A myproject flower                                #   starts the web UI on http://localhost:5555
+
+# Start with custom port and basic auth for production
+celery -A myproject flower \
+    --port=5555 \                                         #   default port — change if needed
+    --basic_auth=admin:secretpassword                     #   protect the dashboard with basic auth
+```
+
+**What the Flower dashboard shows:**
+
+| Tab | Information |
+|---|---|
+| **Dashboard** | Active/processed/failed/succeeded task counts, worker uptime |
+| **Workers** | List of all workers, their status, concurrency, and completed task counts |
+| **Tasks** | Real-time list of all tasks — state, runtime, args, result, traceback on failure |
+| **Broker** | Queue sizes and message rates from Redis/RabbitMQ |
+| **Monitor** | Graphs of task completion times and throughput over time |
+
+**Running Flower in Docker (production):**
+
+```yaml
+# docker-compose.yml (add this service alongside your web and worker services)
+  flower:
+    build: .
+    command: celery -A myproject flower --port=5555       #   run Flower inside the same image
+    ports:
+      - "5555:5555"                                       #   expose the Flower web UI
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0            #   must match your Celery broker setting
+    depends_on:
+      - redis                                             #   ensure Redis starts first
+      - celery_worker                                     #   ensure at least one worker is running
+```
+
+> ⚠️ **Security:** Always use `--basic_auth` or put Flower behind a reverse proxy with authentication in production. The dashboard exposes task arguments which may contain sensitive data.
 
 ### Internationalization
 
@@ -7349,6 +7917,124 @@ Display in templates:
 
 ---
 
+
+### Bookmarklet with JavaScript
+
+> 💡 **Analogy:** A bookmarklet is like a Swiss Army knife you keep in your browser's bookmarks bar. Click it on **any** website, and it runs a small JavaScript program on that page — for example, grabbing an image and sending it back to your Django app.
+
+1️⃣ **WHY** — Bookmarklets let your users interact with your Django application **from any page on the internet** without installing a browser extension. They're perfect for "save this to my account" features — image bookmarking, article clipping, or price tracking. The JavaScript runs in the context of the visited page, so it can read the DOM and send data to your backend.
+
+2️⃣ **WHEN** — Use bookmarklets when you want a lightweight "clip to my app" feature that works across all browsers without extension store review. They're ideal for social bookmarking sites, image collection apps (like Pinterest-style boards), or read-later tools.
+
+3️⃣ **HOW** — The flow has four parts: (1) a launcher bookmark that loads your script, (2) the main JavaScript file hosted on your Django app, (3) CSRF handling, and (4) the Django view that processes the bookmarked data.
+
+**Step 1 — The bookmarklet launcher (saved as a browser bookmark):**
+
+```javascript
+// This one-liner is what the user drags to their bookmarks bar.
+// It loads your full script from your Django server.
+javascript:(function(){
+  var s=document.createElement('script');               //   create a <script> tag
+  s.src='https://yourapp.com/static/js/bookmarklet.js?' //   point to your hosted JS
+       + new Date().getTime();                          //   cache-bust so updates are instant
+  document.head.appendChild(s);                         //   inject the script into the current page
+})();
+```
+
+**Step 2 — The main bookmarklet script (`static/js/bookmarklet.js`):**
+
+```javascript
+(function(){
+  // Prevent loading twice
+  if(window.__myapp_bookmarklet) return;                //   guard against double-clicks
+  window.__myapp_bookmarklet = true;
+
+  var siteUrl = 'https://yourapp.com';                  //   your Django app's base URL
+
+  // Find all images on the current page
+  var images = document.querySelectorAll(               //   grab all <img> tags
+    'img[src$=".jpg"], img[src$=".png"], img[src$=".jpeg"]'
+  );
+
+  if(images.length === 0){
+    alert('No images found on this page!');
+    return;
+  }
+
+  // Build a selection overlay
+  var overlay = document.createElement('div');           //   full-screen overlay for image picking
+  overlay.id = 'myapp-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;'
+    + 'background:rgba(0,0,0,0.7);z-index:99999;overflow:auto;padding:20px;';
+
+  images.forEach(function(img){
+    var thumb = document.createElement('img');           //   show thumbnail of each found image
+    thumb.src = img.src;
+    thumb.style.cssText = 'max-width:150px;margin:10px;cursor:pointer;border:3px solid transparent;';
+    thumb.onclick = function(){                          //   when user clicks a thumbnail
+      selectImage(img.src);                              //   send that image URL to Django
+    };
+    overlay.appendChild(thumb);
+  });
+
+  document.body.appendChild(overlay);
+
+  function selectImage(imageUrl){
+    // Send the selected image URL to Django via POST
+    var form = document.createElement('form');           //   use a hidden form to POST cross-origin
+    form.method = 'POST';
+    form.action = siteUrl + '/images/create/';           //   your Django view URL
+    form.target = '_blank';                              //   open result in a new tab
+
+    var fields = {                                       //   data to send
+      'url': imageUrl,
+      'title': document.title,                           //   use the page title as default
+      'site': window.location.href                       //   source URL for reference
+    };
+
+    for(var key in fields){
+      var input = document.createElement('input');       //   create hidden inputs for each field
+      input.type = 'hidden';
+      input.name = key;
+      input.value = fields[key];
+      form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();                                       //   submit the form to Django
+    overlay.remove();                                    //   clean up the overlay
+  }
+})();
+```
+
+**Step 3 — The Django view that receives the bookmark:**
+
+```python
+# images/views.py
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect
+from .models import Image
+from .forms import ImageCreateForm
+
+@login_required
+def image_create(request):
+    if request.method == 'POST':
+        form = ImageCreateForm(request.POST)             #   form validates URL, title, etc.
+        if form.is_valid():
+            new_image = form.save(commit=False)
+            new_image.user = request.user                #   associate with logged-in user
+            new_image.save()
+            return redirect(new_image.get_absolute_url())
+    else:
+        form = ImageCreateForm(                          #   pre-fill from GET params for manual use
+            data=request.GET
+        )
+    return render(request, 'images/create.html',
+                  {'form': form, 'section': 'images'})
+```
+
+> ⚠️ **CSRF Note:** Since the bookmarklet submits from an external site, the normal `{% csrf_token %}` won't be available. For bookmarklets, you can either use `@csrf_exempt` on the view (less secure) or have the bookmarklet first fetch a page from your app to obtain the CSRF token via cookies. For authenticated users, Django's session cookie handles identity.
+
 ### Asynchronous JavaScript with Django
 
 > 💡 **Analogy:** Traditional form submissions are like **sending a letter and waiting for a reply** — the entire page reloads. AJAX requests are like **texting** — you send a message and the reply appears instantly on the same screen without interrupting what you're doing.
@@ -7491,6 +8177,106 @@ window.addEventListener('scroll', function() {
 ```
 
 ---
+
+
+### Reordering Modules via AJAX
+
+> 💡 **Analogy:** Think of a playlist where you drag songs into your preferred order. The browser handles the drag-and-drop UI, then sends the new order to the server so it's saved permanently.
+
+1️⃣ **WHY** — Course modules and content items have an `order` field that determines their display sequence. Asking instructors to manually type order numbers is terrible UX. Drag-and-drop reordering with AJAX gives instant visual feedback and persists the new order to the database without a full page reload.
+
+2️⃣ **WHEN** — Use this pattern whenever you have ordered items that users need to rearrange: course modules, playlist tracks, kanban board cards, image galleries, or menu items. It combines a JavaScript sortable library on the frontend with a Django view that receives the new order via a POST request.
+
+3️⃣ **HOW** — We'll use the HTML5 Sortable library (or SortableJS) on the frontend and a Django view to save the new order.
+
+**The Django view to handle the reorder request:**
+
+```python
+# courses/views.py
+from django.http import JsonResponse
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .models import Module
+
+class ModuleOrderView(LoginRequiredMixin, View):
+    def post(self, request):
+        import json
+        body = json.loads(request.body)                        #   parse the JSON payload
+        for order, module_id in enumerate(body.get('order', [])):
+            Module.objects.filter(
+                id=module_id,
+                course__owner=request.user                     #   ensure the user owns this course
+            ).update(order=order)                              #   set new position
+        return JsonResponse({'status': 'ok'})
+```
+
+```python
+# courses/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # ... other course URLs ...
+    path('module/reorder/',
+         views.ModuleOrderView.as_view(),
+         name='module_reorder'),                               #   receives the new order via AJAX POST
+]
+```
+
+**The JavaScript for drag-and-drop (using SortableJS):**
+
+```html
+<!-- templates/courses/manage_modules.html -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<ul id="module-list">
+  {% for module in course.modules.all %}
+    <li data-id="{{ module.id }}" class="sortable-item">
+      <span class="drag-handle">☰</span>                    <!-- drag handle icon -->
+      {{ module.title }}
+    </li>
+  {% endfor %}
+</ul>
+
+<script>
+  var el = document.getElementById('module-list');
+
+  // Initialize SortableJS on the list
+  var sortable = new Sortable(el, {
+    handle: '.drag-handle',                                    //   only drag from the handle icon
+    animation: 150,                                            //   smooth animation duration in ms
+    onEnd: function(evt) {                                     //   fires after an item is dropped
+      // Collect the new order of module IDs
+      var order = [];
+      el.querySelectorAll('li').forEach(function(li) {
+        order.push(parseInt(li.dataset.id));                   //   read data-id from each <li>
+      });
+
+      // Send the new order to Django
+      fetch('{% url "module_reorder" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')                //   include CSRF token from cookie
+        },
+        body: JSON.stringify({ order: order })                 //   send array of module IDs in new order
+      })
+      .then(response => response.json())
+      .then(data => console.log('Reorder saved:', data));
+    }
+  });
+
+  // Helper to read a cookie by name (for CSRF token)
+  function getCookie(name) {
+    var value = '; ' + document.cookie;
+    var parts = value.split('; ' + name + '=');
+    if (parts.length === 2)
+      return parts.pop().split(';').shift();                   //   extract the cookie value
+  }
+</script>
+```
+
+> ⚠️ **CSRF:** Always include the CSRF token in AJAX POST requests. The `getCookie('csrftoken')` approach works when `{% csrf_token %}` has been rendered on the page (which sets the cookie). Avoid `@csrf_exempt` in production.
 
 ### Coupon System
 
@@ -8245,6 +9031,275 @@ def sales_dashboard(request):
         'monthly_sales': monthly_sales,
         'top_products': top_products,
     })
+```
+
+
+### E-Learning Platform Project
+
+> 💡 **Analogy:** Think of this like building your own mini-Udemy. You need **subjects** (categories), **courses** (created by instructors), **modules** (chapters within a course), and **content** (the actual lessons — which could be text, images, videos, or files). The tricky part is that each content type has different fields, so we use Django's **ContentTypes framework** to handle polymorphic content.
+
+1️⃣ **WHY** — An e-learning platform is an excellent real-world project because it combines multiple advanced Django concepts: model inheritance, the ContentTypes framework for generic relations, many-to-many relationships for enrollment, class-based views, mixins for permissions, and template rendering of polymorphic objects. Building it teaches you how to design flexible, extensible data models.
+
+2️⃣ **WHEN** — Build this after you're comfortable with Django models, views, and templates. This project is ideal as your second or third Django app, after a blog or e-commerce store. The patterns here (especially ContentTypes) appear in CMS platforms, course builders, and any app where a "container" can hold items of different types.
+
+3️⃣ **HOW** — We'll build the models layer by layer, then add views for course management and enrollment.
+
+**Course structure models:**
+
+```python
+# courses/models.py
+from django.db import models
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType     #   Django's ContentType registry
+from django.contrib.contenttypes.fields import GenericForeignKey #  points to any model instance
+
+class Subject(models.Model):
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)       #   URL-friendly identifier
+
+    class Meta:
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+class Course(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL,
+                              related_name='courses_created',
+                              on_delete=models.CASCADE)        #   the instructor who created the course
+    subject = models.ForeignKey(Subject,
+                                related_name='courses',
+                                on_delete=models.CASCADE)
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    overview = models.TextField()                               #   course description
+    students = models.ManyToManyField(settings.AUTH_USER_MODEL,
+                                      related_name='courses_joined',
+                                      blank=True)              #   enrolled students
+    created = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created']
+
+    def __str__(self):
+        return self.title
+
+class Module(models.Model):
+    course = models.ForeignKey(Course,
+                               related_name='modules',
+                               on_delete=models.CASCADE)       #   each module belongs to one course
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    order = models.PositiveIntegerField(default=0)             #   controls display order — used by drag-and-drop reordering
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f'{self.order}. {self.title}'
+```
+
+**Polymorphic content models using ContentTypes:**
+
+```python
+# courses/models.py (continued)
+
+class Content(models.Model):
+    module = models.ForeignKey(Module,
+                               related_name='contents',
+                               on_delete=models.CASCADE)
+    content_type = models.ForeignKey(ContentType,
+                                      on_delete=models.CASCADE,
+                                      limit_choices_to={       #   restrict to our content models only
+                                          'model__in': ('text', 'image', 'video', 'file')
+                                      })
+    object_id = models.PositiveIntegerField()                  #   PK of the related content object
+    item = GenericForeignKey('content_type', 'object_id')      #   resolves to the actual Text/Image/Video/File instance
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order']
+
+class ItemBase(models.Model):
+    """Abstract base for all content types."""
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL,
+                              related_name='%(class)s_related', #  generates unique related names per subclass
+                              on_delete=models.CASCADE)
+    title = models.CharField(max_length=250)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True                                         #   no database table for ItemBase itself
+
+    def __str__(self):
+        return self.title
+
+class Text(ItemBase):
+    content = models.TextField()                                #   a text lesson
+
+class File(ItemBase):
+    file = models.FileField(upload_to='files')                  #   downloadable file (PDF, ZIP, etc.)
+
+class Image(ItemBase):
+    image = models.ImageField(upload_to='images')               #   image content
+
+class Video(ItemBase):
+    url = models.URLField()                                     #   link to an external video (YouTube, Vimeo)
+```
+
+**Rendering different content types in templates:**
+
+```html
+<!-- templates/courses/module_content_list.html -->
+{% for content in module.contents.all %}
+  {% with item=content.item %}
+    <div class="content-item">
+      <h3>{{ item.title }}</h3>
+      <!-- Each content type has its own template fragment -->
+      {% include "courses/content/"item_type".html" %}
+    </div>
+  {% endwith %}
+{% endfor %}
+```
+
+Create a template for each content type:
+
+```html
+<!-- templates/courses/content/text.html -->
+<div class="text-content">{{ item.content|linebreaks }}</div>
+
+<!-- templates/courses/content/image.html -->
+<img src="{{ item.image.url }}" alt="{{ item.title }}">
+
+<!-- templates/courses/content/video.html -->
+<iframe src="{{ item.url }}" width="640" height="480"></iframe>
+
+<!-- templates/courses/content/file.html -->
+<a href="{{ item.file.url }}" download>Download {{ item.title }}</a>
+```
+
+### Student Registration and Enrollment
+
+> 💡 **Analogy:** Registration is getting your student ID card; enrollment is signing up for specific classes. Two separate steps — you can't take a class without being a student first.
+
+1️⃣ **WHY** — An e-learning platform needs to separate **registration** (creating an account) from **enrollment** (joining a course). Registration happens once; enrollment happens per course. Students should only see course content after enrolling, which means we need enrollment-based access control on views. Using Django's class-based views (`CreateView`, `FormView`) makes this clean and DRY.
+
+2️⃣ **WHEN** — Build registration and enrollment right after your course models are in place. These views are the gateway between anonymous visitors and active learners. You'll also want these before building any content-access views, since those depend on enrollment status.
+
+3️⃣ **HOW** — We'll build a student registration view, an enrollment view, and a mixin to restrict content access.
+
+**Student registration with `CreateView`:**
+
+```python
+# students/views.py
+from django.contrib.auth import authenticate, login
+from django.contrib.auth.forms import UserCreationForm
+from django.urls import reverse_lazy
+from django.views.generic.edit import CreateView, FormView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from courses.models import Course
+
+class StudentRegistrationView(CreateView):
+    template_name = 'students/registration.html'
+    form_class = UserCreationForm                              #   Django's built-in registration form
+    success_url = reverse_lazy('student_course_list')          #   redirect after signup
+
+    def form_valid(self, form):
+        result = super().form_valid(form)
+        user = authenticate(                                   #   auto-login after registration
+            username=form.cleaned_data['username'],
+            password=form.cleaned_data['password1']
+        )
+        login(self.request, user)                              #   log the new student in immediately
+        return result
+```
+
+**Course enrollment with `FormView`:**
+
+```python
+# students/views.py (continued)
+from django import forms
+
+class CourseEnrollForm(forms.Form):
+    course = forms.ModelChoiceField(                            #   hidden field with the course PK
+        queryset=Course.objects.all(),
+        widget=forms.HiddenInput
+    )
+
+class StudentEnrollCourseView(LoginRequiredMixin, FormView):
+    form_class = CourseEnrollForm
+    course = None
+
+    def form_valid(self, form):
+        self.course = form.cleaned_data['course']
+        self.course.students.add(self.request.user)            #   add user to the course's ManyToMany
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse_lazy('student_course_detail',           #   redirect to the course content
+                            args=[self.course.pk])
+```
+
+**Restricting content to enrolled students:**
+
+```python
+# students/views.py (continued)
+from django.views.generic.list import ListView
+from django.views.generic.detail import DetailView
+
+class StudentCourseListView(LoginRequiredMixin, ListView):
+    model = Course
+    template_name = 'students/course_list.html'
+
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            students__in=[self.request.user]                   #   only show courses the student enrolled in
+        )
+
+class StudentCourseDetailView(LoginRequiredMixin, DetailView):
+    model = Course
+    template_name = 'students/course_detail.html'
+
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            students__in=[self.request.user]                   #   enrolled students only — others get 404
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        course = self.get_object()
+        if 'module_id' in self.kwargs:                         #   optional: show specific module
+            context['module'] = course.modules.get(
+                id=self.kwargs['module_id']
+            )
+        else:
+            context['module'] = course.modules.first()         #   default to the first module
+        return context
+```
+
+```python
+# students/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('register/',
+         views.StudentRegistrationView.as_view(),
+         name='student_registration'),
+    path('enroll-course/',
+         views.StudentEnrollCourseView.as_view(),
+         name='student_enroll_course'),
+    path('courses/',
+         views.StudentCourseListView.as_view(),
+         name='student_course_list'),
+    path('course/<pk>/',
+         views.StudentCourseDetailView.as_view(),
+         name='student_course_detail'),
+    path('course/<pk>/module/<module_id>/',
+         views.StudentCourseDetailView.as_view(),
+         name='student_course_detail_module'),
+]
 ```
 
 ### Deploying with Gunicorn and Nginx
