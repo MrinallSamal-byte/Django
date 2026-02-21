@@ -682,7 +682,7 @@ Configure the session backend in `settings.py`:
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 #   SESSION_ENGINE → controls where session data is stored
 #   Options:
-#     'django.contrib.sessions.backends.db'       → MySQL database (default)
+#     'django.contrib.sessions.backends.db'       → database (default)
 #     'django.contrib.sessions.backends.cache'     → cache only (fast, volatile)
 #     'django.contrib.sessions.backends.cached_db' → cache + database fallback
 #     'django.contrib.sessions.backends.file'      → server filesystem
@@ -4468,7 +4468,7 @@ Set up Google OAuth credentials:
 2. Create a new project (or select an existing one)
 3. Navigate to **APIs & Services → Credentials**
 4. Click **Create Credentials → OAuth 2.0 Client ID**
-5. Set the **Authorized redirect URI** to `https://localhost:8000/social-auth/complete/google-oauth2/`
+5. Set the **Authorized redirect URI** to `https://127.0.0.1:8000/social-auth/complete/google-oauth2/` (HTTPS is required by Google — see the [SSL/TLS Certificates](#ssltls-certificates) section for running the dev server over HTTPS)
 6. Copy the **Client ID** and **Client Secret**
 
 ```python
@@ -5523,6 +5523,34 @@ router.register(r'posts', PostViewSet)
 urlpatterns = router.urls
 ```
 
+Consuming the API:
+
+```bash
+# List all posts (GET)
+curl http://127.0.0.1:8000/api/posts/
+#   Returns JSON array of published posts
+
+# Retrieve a single post (GET)
+curl http://127.0.0.1:8000/api/posts/1/
+#   Returns JSON object for post with id=1
+
+# Create a post (POST — requires authentication)
+curl -X POST http://127.0.0.1:8000/api/posts/ \
+     -H "Content-Type: application/json" \
+     -u admin:password123 \
+     -d '{"title": "New Post", "body": "Hello from the API", "status": "published"}'
+#   -u → HTTP Basic Authentication (username:password)
+#   -d → JSON request body
+
+# Using Python requests library
+import requests
+response = requests.get('http://127.0.0.1:8000/api/posts/')
+posts = response.json()
+#   .json() → parses the JSON response into a Python list/dict
+```
+
+> **Tip:** DRF includes a **browsable API** — visit `/api/posts/` in your browser to see an interactive HTML interface where you can test endpoints, submit forms, and inspect responses without writing any client code.
+
 ### Signals
 
 1️⃣ **WHY** — Signals allow decoupled components to react to events (e.g., auto-create a profile when a user is created).
@@ -5682,6 +5710,8 @@ app.autodiscover_tasks()
 # settings.py
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 #   Message broker — Redis is the recommended choice
+#   Alternative: RabbitMQ → 'amqp://guest:guest@localhost:5672//'
+#   RabbitMQ is a dedicated message broker with advanced routing features
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 ```
 
