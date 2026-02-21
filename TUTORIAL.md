@@ -77,7 +77,7 @@
 
 ### What is Django?
 
-> 💡 **Analogy:** Think of Django as a **fully furnished apartment** — it comes with a kitchen (admin panel), plumbing (database ORM), locks on the doors (security), and a mailbox (URL routing). Flask, by contrast, is an empty room where you bring your own furniture.
+> 💡 **Analogy:** Think of Django as a **fully furnished apartment** — it comes with a kitchen (admin panel), plumbing (database ORM), locks on the doors (security), and a mailbox (URL routing). Flask, by contrast, is a **studio apartment with basic utilities** where you choose which furniture to add.
 
 1️⃣ **WHY** — Django exists to solve the problem of building complex, database-driven websites quickly and cleanly. Without a framework, developers must write boilerplate code for URL routing, database access, session handling, and security — Django handles all of this out of the box.
 
@@ -1943,8 +1943,8 @@ from django.utils.translation import gettext_lazy as _
 #   gettext_lazy → marks a string for translation; evaluated lazily
 
 class Post(models.Model):
-    title = models.CharField(_('title'), max_length=200)
-    #   _('title') → the field label will be translated
+    title = models.CharField(verbose_name=_('title'), max_length=200)
+    #   verbose_name=_('title') → the field label will be translated
 
     class Meta:
         verbose_name = _('post')
@@ -2131,6 +2131,7 @@ class Product(models.Model):
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     #   DecimalField → DECIMAL(10,2) in MySQL — exact precision for money
+    #   Allows values up to 99,999,999.99 — use max_digits=12 for higher-value items
     image = models.ImageField(upload_to='products/%Y/%m/', blank=True)
     stock = models.PositiveIntegerField(default=0)
     available = models.BooleanField(default=True)
@@ -2243,6 +2244,7 @@ class Cart:
 # orders/views.py
 from django.db import transaction
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 
 @login_required
 def checkout(request):
@@ -2253,10 +2255,12 @@ def checkout(request):
             #   If any step fails, all changes are rolled back
             order = Order.objects.create(user=request.user)
             for product_id, item_data in cart.cart.items():
-                product = Product.objects.select_for_update().get(id=product_id)
+                product = Product.objects.select_for_update().get(id=int(product_id))
                 #   select_for_update() → MySQL row-level lock (prevents race conditions)
+                #   int(product_id)     → cart stores IDs as strings; convert explicitly
                 if product.stock < item_data['quantity']:
-                    raise ValueError(f'Not enough stock for {product.name}')
+                    raise ValidationError(f'Not enough stock for {product.name}')
+                    #   ValidationError → handled gracefully; does not crash the server
                 product.stock -= item_data['quantity']
                 product.save()
                 OrderItem.objects.create(
