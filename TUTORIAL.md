@@ -51,11 +51,22 @@
   - [Custom Management Commands](#custom-management-commands)
   - [Middleware](#middleware)
   - [Celery and Async Tasks](#celery-and-async-tasks)
+  - [Internationalization](#internationalization)
 - [Part 10: Real-World Projects &amp; Deployment](#part-10-real-world-projects--deployment)
   - [Project: Task Manager](#project-task-manager)
   - [Project: Blog Platform](#project-blog-platform)
+  - [Project: E-Commerce Store](#project-e-commerce-store)
   - [Deploying with Gunicorn and Nginx](#deploying-with-gunicorn-and-nginx)
   - [Docker Deployment](#docker-deployment)
+- [Common Mistakes](#common-mistakes)
+  - [Migration Mistakes](#migration-mistakes)
+  - [Insecure Settings](#insecure-settings)
+  - [Inefficient Queries](#inefficient-queries)
+  - [Deployment Pitfalls](#deployment-pitfalls)
+- [Comparisons](#comparisons)
+  - [Django vs Flask vs FastAPI](#django-vs-flask-vs-fastapi)
+  - [MySQL vs NoSQL Databases](#mysql-vs-nosql-databases)
+  - [Scalability Considerations](#scalability-considerations)
 - [Practice Exercises](#practice-exercises)
 - [Cheat Sheet](#cheat-sheet)
 - [Further Reading](#further-reading)
@@ -2083,13 +2094,241 @@ def search_posts(request):
 > -- Requires InnoDB (MySQL 5.6+) or MyISAM engine
 > ```
 
+### Project: E-Commerce Store
+
+Build a complete e-commerce storefront using Django and MySQL:
+
+**Requirements:**
+- Product catalog with categories, images, and prices stored in MySQL
+- Shopping cart using Django sessions
+- User registration, login, and order history
+- Checkout with form validation and order creation
+- Admin interface for managing products and orders
+- REST API for product listing
+
+**Core models:**
+
+```python
+# shop/models.py
+from django.db import models
+from django.contrib.auth.models import User
+
+class Category(models.Model):
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(unique=True)
+
+    class Meta:
+        verbose_name_plural = 'categories'
+
+    def __str__(self):
+        return self.name
+
+
+class Product(models.Model):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    #   DecimalField → DECIMAL(10,2) in MySQL — exact precision for money
+    image = models.ImageField(upload_to='products/%Y/%m/', blank=True)
+    stock = models.PositiveIntegerField(default=0)
+    available = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['category', 'available']),
+            #   Composite index for filtering by category + availability
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name
+
+
+class Order(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('paid', 'Paid'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def total_cost(self):
+        return sum(item.get_cost() for item in self.items.all())
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    #   Snapshot of the price at the time of purchase (prices may change later)
+    quantity = models.PositiveIntegerField(default=1)
+
+    def get_cost(self):
+        return self.price * self.quantity
+```
+
+**MySQL settings for this project:**
+
+```python
+# settings.py
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'ecommerce_db',
+        'USER': os.environ.get('DB_USER', 'myuser'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
+        },
+    }
+}
+```
+
+**Shopping cart using sessions:**
+
+```python
+# cart/cart.py
+from decimal import Decimal
+from shop.models import Product
+
+class Cart:
+    def __init__(self, request):
+        self.session = request.session
+        cart = self.session.get('cart')
+        if not cart:
+            cart = self.session['cart'] = {}
+        self.cart = cart
+
+    def add(self, product, quantity=1):
+        product_id = str(product.id)
+        if product_id not in self.cart:
+            self.cart[product_id] = {'quantity': 0, 'price': str(product.price)}
+        self.cart[product_id]['quantity'] += quantity
+        self.save()
+
+    def remove(self, product):
+        product_id = str(product.id)
+        if product_id in self.cart:
+            del self.cart[product_id]
+            self.save()
+
+    def get_total_price(self):
+        return sum(
+            Decimal(item['price']) * item['quantity']
+            for item in self.cart.values()
+        )
+
+    def save(self):
+        self.session.modified = True
+```
+
+**Checkout view with MySQL transaction:**
+
+```python
+# orders/views.py
+from django.db import transaction
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def checkout(request):
+    cart = Cart(request)
+    if request.method == 'POST':
+        with transaction.atomic():
+            #   transaction.atomic() → wraps everything in a MySQL transaction
+            #   If any step fails, all changes are rolled back
+            order = Order.objects.create(user=request.user)
+            for product_id, item_data in cart.cart.items():
+                product = Product.objects.select_for_update().get(id=product_id)
+                #   select_for_update() → MySQL row-level lock (prevents race conditions)
+                if product.stock < item_data['quantity']:
+                    raise ValueError(f'Not enough stock for {product.name}')
+                product.stock -= item_data['quantity']
+                product.save()
+                OrderItem.objects.create(
+                    order=order,
+                    product=product,
+                    price=product.price,
+                    quantity=item_data['quantity'],
+                )
+        cart.cart.clear()
+        cart.save()
+        return redirect('orders:order_detail', pk=order.pk)
+    return render(request, 'orders/checkout.html', {'cart': cart})
+```
+
+**MySQL query for sales dashboard:**
+
+```python
+# orders/views.py — dashboard with real-time MySQL aggregate queries
+from django.db.models import Sum, Count, F, DecimalField
+from django.db.models.functions import TruncMonth
+
+def sales_dashboard(request):
+    # Total revenue using MySQL SUM()
+    total_revenue = OrderItem.objects.aggregate(
+        total=Sum(F('price') * F('quantity'), output_field=DecimalField())
+    )['total'] or 0
+
+    # Monthly sales using MySQL DATE_FORMAT via TruncMonth
+    monthly_sales = (
+        Order.objects
+        .filter(status='paid')
+        .annotate(month=TruncMonth('created_at'))
+        .values('month')
+        .annotate(
+            revenue=Sum(F('items__price') * F('items__quantity'),
+                        output_field=DecimalField()),
+            order_count=Count('id'),
+        )
+        .order_by('month')
+    )
+    #   Generated MySQL:
+    #   SELECT DATE_FORMAT(`orders_order`.`created_at`, '%Y-%m-01') AS `month`,
+    #          SUM(`orders_orderitem`.`price` * `orders_orderitem`.`quantity`) AS `revenue`,
+    #          COUNT(`orders_order`.`id`) AS `order_count`
+    #   FROM `orders_order`
+    #   INNER JOIN `orders_orderitem` ON (...)
+    #   WHERE `orders_order`.`status` = 'paid'
+    #   GROUP BY `month`
+    #   ORDER BY `month` ASC
+
+    # Top 5 best-selling products
+    top_products = (
+        OrderItem.objects
+        .values('product__name')
+        .annotate(total_sold=Sum('quantity'))
+        .order_by('-total_sold')[:5]
+    )
+
+    return render(request, 'orders/dashboard.html', {
+        'total_revenue': total_revenue,
+        'monthly_sales': monthly_sales,
+        'top_products': top_products,
+    })
+```
+
 ### Deploying with Gunicorn and Nginx
 
-**WHY:** The Django development server is single-threaded and insecure. Gunicorn is a production-grade WSGI server, and Nginx serves as a reverse proxy and static file server.
+1️⃣ **WHY** — The Django development server is single-threaded and insecure. Gunicorn is a production-grade WSGI server, and Nginx serves as a reverse proxy and static file server.
 
-**WHEN:** Deploying to any Linux server.
+2️⃣ **WHEN** — Deploying to any Linux server.
 
-**HOW:**
+3️⃣ **HOW**
 
 ```bash
 pip install gunicorn
@@ -2151,11 +2390,11 @@ python manage.py check --deploy
 
 ### Docker Deployment
 
-**WHY:** Docker containers ensure your application runs identically across development, staging, and production environments.
+1️⃣ **WHY** — Docker containers ensure your application runs identically across development, staging, and production environments.
 
-**WHEN:** For reproducible deployments, CI/CD pipelines, and cloud hosting.
+2️⃣ **WHEN** — For reproducible deployments, CI/CD pipelines, and cloud hosting.
 
-**HOW:**
+3️⃣ **HOW**
 
 ```dockerfile
 # Dockerfile
@@ -2214,6 +2453,200 @@ services:
 
 volumes:
   mysql_data:
+```
+
+✏️ **Practice:** Containerize the blog application: create a `Dockerfile` and `docker-compose.yml` with Django + MySQL services. Add a health check for MySQL and use `depends_on` with `condition: service_healthy`. Run `docker-compose up` and verify you can access the site at `http://localhost:8000`.
+
+---
+
+## Common Mistakes
+
+### Migration Mistakes
+
+| Mistake | Why It's a Problem | How to Avoid |
+|---------|-------------------|--------------|
+| Editing migration files manually | Breaks migration history; `migrate` may fail or corrupt data | Always use `makemigrations` to generate changes; use `RunSQL` or `RunPython` for custom operations |
+| Deleting migration files | Django loses track of schema state | Use `squashmigrations` to consolidate instead |
+| Forgetting `makemigrations` before `migrate` | Model changes are not applied to the database | Always run `makemigrations` after every model change |
+| Not committing migrations to version control | Other developers have different schemas | Always commit `migrations/` directories |
+| Running `migrate` on production without testing | A bad migration can cause data loss or downtime | Test migrations on a staging MySQL database first; use `--plan` to preview |
+
+```python
+# BAD: editing a migration file to rename a field
+# This will NOT work — Django tracks migrations by file hash
+
+# GOOD: create a new migration
+python manage.py makemigrations blog --name rename_title_to_headline
+# Then in the generated migration:
+operations = [
+    migrations.RenameField(
+        model_name='post',
+        old_name='title',
+        new_name='headline',
+    ),
+]
+```
+
+### Insecure Settings
+
+```python
+# ❌ BAD — common in production deployments
+DEBUG = True                    # Exposes stack traces, SQL queries, settings
+SECRET_KEY = 'hardcoded-key'    # Same key across all environments
+ALLOWED_HOSTS = ['*']           # Allows any hostname
+
+# ✅ GOOD — secure production settings
+DEBUG = False
+SECRET_KEY = os.environ['DJANGO_SECRET_KEY']   # From environment variable
+ALLOWED_HOSTS = ['example.com', 'www.example.com']  # Explicit hostnames
+
+# Always run this before deploying:
+python manage.py check --deploy
+# It will warn about any insecure settings
+```
+
+### Inefficient Queries
+
+```python
+# ❌ BAD — N+1 query problem (1 query + 1 per post for category)
+posts = Post.objects.all()
+for post in posts:
+    print(post.category.name)    # Triggers a new MySQL query every iteration!
+# Total: 101 queries for 100 posts
+
+# ✅ GOOD — single query with JOIN
+posts = Post.objects.select_related('category').all()
+for post in posts:
+    print(post.category.name)    # Already loaded — no extra query
+# Total: 1 query
+
+# ❌ BAD — loading all fields when you only need one
+all_posts = Post.objects.all()   # Fetches every column from MySQL
+
+# ✅ GOOD — fetch only what you need
+titles = Post.objects.values_list('title', flat=True)
+
+# ❌ BAD — counting in Python
+count = len(Post.objects.all())  # Loads ALL rows into memory, then counts
+
+# ✅ GOOD — counting in MySQL
+count = Post.objects.count()     # SELECT COUNT(*) — fast, no data transfer
+```
+
+### Deployment Pitfalls
+
+| Pitfall | Consequence | Solution |
+|---------|------------|----------|
+| Not running `collectstatic` | CSS/JS files missing in production | Add `python manage.py collectstatic --noinput` to deploy script |
+| Using Django's dev server in production | Single-threaded, no HTTPS, insecure | Use Gunicorn or uWSGI behind Nginx |
+| Not setting `CONN_MAX_AGE` in MySQL settings | New MySQL connection per request (slow) | Set `'CONN_MAX_AGE': 600` for persistent connections |
+| Storing secrets in code or `settings.py` | Credentials exposed in version control | Use environment variables or a secrets manager |
+| Not backing up MySQL before migrations | Migration failure can cause data loss | Run `mysqldump` before every production migration |
+
+---
+
+## Comparisons
+
+### Django vs Flask vs FastAPI
+
+| Feature | Django | Flask | FastAPI |
+|---------|--------|-------|---------|
+| **Type** | Full-stack framework | Micro-framework | Modern async API framework |
+| **ORM** | Built-in (Django ORM) | None (use SQLAlchemy) | None (use SQLAlchemy/Tortoise) |
+| **Admin panel** | Built-in | None (use Flask-Admin) | None |
+| **Authentication** | Built-in | None (use Flask-Login) | None (use custom or libraries) |
+| **API support** | DRF (add-on) | Flask-RESTful (add-on) | Native (built-in) |
+| **Async support** | Partial (Django 4.1+) | Limited (via extensions) | Full native async/await |
+| **Performance** | Good for most apps | Good | Excellent (async I/O) |
+| **Learning curve** | Moderate | Low | Low-Moderate |
+| **Best for** | Full web apps, CMS, e-commerce | Small apps, microservices, prototypes | High-performance APIs, async workloads |
+| **Community** | Very large, mature | Large, mature | Growing rapidly |
+| **MySQL support** | Excellent (built-in adapter) | Via SQLAlchemy | Via SQLAlchemy or databases lib |
+
+**When to choose Django:** You need a full-featured application with user auth, admin panel, forms, and a relational database (MySQL). You want batteries included and don't want to assemble components yourself.
+
+**When to choose Flask:** You need a lightweight application or microservice where you want full control over which libraries to use.
+
+**When to choose FastAPI:** You need a high-performance API with native async support, automatic OpenAPI docs, and type validation.
+
+### MySQL vs NoSQL Databases
+
+| Feature | MySQL (Relational) | MongoDB (Document) | Redis (Key-Value) |
+|---------|-------------------|-------------------|-------------------|
+| **Data model** | Tables with rows and columns | JSON-like documents | Key-value pairs |
+| **Schema** | Strict (defined upfront) | Flexible (schema-less) | Schema-less |
+| **Relationships** | JOINs and foreign keys | Embedded docs or manual refs | No relationships |
+| **Transactions** | Full ACID support | Multi-doc transactions (4.0+) | Single-key atomic |
+| **Query language** | SQL | MongoDB Query Language | Simple GET/SET commands |
+| **Django support** | Built-in adapter | Via `djongo` (limited) | Via `django-redis` (caching) |
+| **Best for** | Structured data, complex queries, financial data | Rapidly changing schemas, content management | Caching, sessions, real-time leaderboards |
+
+**When to use MySQL with Django:**
+- You need complex queries with JOINs across multiple tables
+- Data integrity and ACID transactions are critical (e.g., e-commerce orders)
+- You want the best Django integration (full ORM support, admin, migrations)
+- You need a mature, well-documented database with excellent tooling
+
+**When to consider NoSQL:**
+- Your data is highly unstructured or varies widely between records
+- You need horizontal scaling across many servers
+- You're building a caching layer (Redis) alongside your MySQL primary database
+
+### Scalability Considerations
+
+```
+Small App (< 1,000 users)
+├── Single server: Django + MySQL on one machine
+├── SQLite may even suffice for development
+└── No caching needed
+
+Medium App (1,000 – 100,000 users)
+├── Separate Django and MySQL servers
+├── Add Redis for caching and sessions
+├── Use CONN_MAX_AGE for persistent MySQL connections
+├── Add database indexes on frequently queried columns
+└── Use select_related / prefetch_related everywhere
+
+Large App (100,000+ users)
+├── Multiple Django instances behind a load balancer (Nginx)
+├── MySQL read replicas for heavy read workloads
+│   └── Django's DATABASE_ROUTERS can direct reads to replicas
+├── Redis cluster for caching
+├── Celery workers for background tasks
+├── CDN for static files
+└── Consider MySQL partitioning for very large tables
+```
+
+```python
+# Example: Configuring MySQL read replicas in Django
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'mydb',
+        'HOST': 'mysql-primary.example.com',
+        # ... credentials ...
+    },
+    'replica': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'mydb',
+        'HOST': 'mysql-replica.example.com',
+        # ... credentials ...
+    },
+}
+
+# Database router to direct reads to the replica
+class PrimaryReplicaRouter:
+    def db_for_read(self, model, **hints):
+        return 'replica'
+
+    def db_for_write(self, model, **hints):
+        return 'default'
+
+    def allow_relation(self, obj1, obj2, **hints):
+        return True
+
+    def allow_migrate(self, db, app_label, model_name=None, **hints):
+        return db == 'default'
 ```
 
 ---
