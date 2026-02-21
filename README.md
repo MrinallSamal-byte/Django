@@ -22,9 +22,17 @@ This repository contains a comprehensive Django tutorial using MySQL as the data
 2. **Create and activate a virtual environment**
 
    ```bash
+   # Linux/macOS
    python3 -m venv venv
-   source venv/bin/activate   # Linux/macOS
-   venv\Scripts\activate      # Windows
+   source venv/bin/activate
+
+   # Windows (Command Prompt)
+   python -m venv venv
+   venv\Scripts\activate
+
+   # Windows (PowerShell)
+   python -m venv venv
+   venv\Scripts\Activate.ps1
    ```
 
 3. **Install Python dependencies**
