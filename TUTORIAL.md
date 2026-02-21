@@ -143,13 +143,20 @@ Browser Response ◄── rendered HTML
 
 ```bash
 # Check if Python is installed
+# Linux / macOS
 python3 --version          # Expected: Python 3.8 or higher
+
+# Windows (Command Prompt or PowerShell)
+python --version           # Expected: Python 3.8 or higher
 
 # On Ubuntu/Debian, install if missing
 sudo apt update && sudo apt install python3 python3-pip python3-venv
 
 # On macOS (using Homebrew)
 brew install python
+
+# On Windows — download the installer from https://www.python.org/downloads/
+# and check "Add Python to PATH" during installation
 ```
 
 ### Setting Up a Virtual Environment
@@ -162,13 +169,19 @@ brew install python
 
 ```bash
 # Create a virtual environment named 'venv'
+# Linux / macOS
 python3 -m venv venv
-#   python3 -m venv  → invoke the venv module
-#   venv             → directory name for the environment
+
+# Windows
+python -m venv venv
+
+#   -m venv  → invoke the venv module
+#   venv     → directory name for the environment
 
 # Activate the environment
 source venv/bin/activate        # Linux / macOS
-# venv\Scripts\activate         # Windows
+venv\Scripts\activate           # Windows (Command Prompt)
+venv\Scripts\Activate.ps1       # Windows (PowerShell)
 
 # Your prompt will now show (venv), confirming activation
 ```
@@ -2377,9 +2390,22 @@ Production checklist:
 
 ```bash
 # 1. Set environment variables
+# Run the block that matches your operating system:
+
+# Linux / macOS
 export DJANGO_SECRET_KEY='your-very-long-random-secret-key'
 export DB_PASSWORD='your-db-password'
 export DJANGO_SETTINGS_MODULE='mysite.settings'
+
+# Windows (Command Prompt) — run these instead of the export lines above:
+# set DJANGO_SECRET_KEY=your-very-long-random-secret-key
+# set DB_PASSWORD=your-db-password
+# set DJANGO_SETTINGS_MODULE=mysite.settings
+
+# Windows (PowerShell) — run these instead of the export lines above:
+# $env:DJANGO_SECRET_KEY = 'your-very-long-random-secret-key'
+# $env:DB_PASSWORD = 'your-db-password'
+# $env:DJANGO_SETTINGS_MODULE = 'mysite.settings'
 
 # 2. Collect static files
 python manage.py collectstatic --noinput
