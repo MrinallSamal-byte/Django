@@ -582,6 +582,41 @@ python manage.py sqlmigrate blog 0001
 #   Displays the raw SQL that a migration will execute
 ```
 
+Example MySQL output from `sqlmigrate blog 0001`:
+
+```sql
+--
+-- Create model Category
+--
+CREATE TABLE `blog_category` (
+    `id` bigint AUTO_INCREMENT NOT NULL PRIMARY KEY,
+    `name` varchar(100) NOT NULL,
+    `slug` varchar(50) NOT NULL UNIQUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+--   ENGINE=InnoDB → MySQL's default transactional storage engine
+--   utf8mb4       → full Unicode support (including emojis)
+
+--
+-- Create model Post
+--
+CREATE TABLE `blog_post` (
+    `id` bigint AUTO_INCREMENT NOT NULL PRIMARY KEY,
+    `title` varchar(200) NOT NULL,
+    `slug` varchar(200) NOT NULL,
+    `body` longtext NOT NULL,
+    `status` varchar(10) NOT NULL,
+    `publish_date` datetime(6) NOT NULL,
+    `created_at` datetime(6) NOT NULL,
+    `updated_at` datetime(6) NOT NULL,
+    `category_id` bigint NULL,
+    CONSTRAINT `blog_post_category_id_fk` FOREIGN KEY (`category_id`)
+        REFERENCES `blog_category` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+--   datetime(6)   → microsecond precision (MySQL 5.6.4+)
+--   FOREIGN KEY    → enforced referential integrity at the database level
+--   bigint         → Django's default BigAutoField primary key
+```
+
 ### QuerySet API
 
 **WHY:** The QuerySet API is Django's interface for building database queries in Python. It is lazy (queries execute only when data is needed) and chainable.
@@ -669,6 +704,87 @@ with connection.cursor() as cursor:
     cursor.execute('SELECT COUNT(*) FROM blog_post')
     row = cursor.fetchone()
     print(row[0])
+```
+
+#### Viewing MySQL Query Output via the ORM
+
+Use Django's `connection.queries` or the `query` attribute to see the generated MySQL SQL:
+
+```python
+from django.db import connection, reset_queries
+from django.conf import settings
+
+# Enable query logging (DEBUG must be True)
+settings.DEBUG = True
+reset_queries()
+
+posts = list(Post.objects.filter(status='published').order_by('-publish_date')[:5])
+
+# Print the generated MySQL query
+print(connection.queries[-1]['sql'])
+# Output:
+#   SELECT `blog_post`.`id`, `blog_post`.`title`, `blog_post`.`slug`,
+#          `blog_post`.`body`, `blog_post`.`status`, `blog_post`.`publish_date`,
+#          `blog_post`.`created_at`, `blog_post`.`updated_at`, `blog_post`.`category_id`
+#   FROM `blog_post`
+#   WHERE `blog_post`.`status` = 'published'
+#   ORDER BY `blog_post`.`publish_date` DESC
+#   LIMIT 5
+```
+
+> **Note:** MySQL uses backtick-quoted identifiers (`` `table`.`column` ``), unlike PostgreSQL which uses double quotes.
+
+#### MySQL EXPLAIN for Query Analysis
+
+```python
+from django.db import connection
+
+with connection.cursor() as cursor:
+    cursor.execute(
+        "EXPLAIN SELECT * FROM blog_post WHERE status = %s ORDER BY publish_date DESC",
+        ['published']
+    )
+    for row in cursor.fetchall():
+        print(row)
+# Example output:
+#   (1, 'SIMPLE', 'blog_post', None, 'ref', 'blog_post_status_idx',
+#    'blog_post_status_idx', '42', 'const', 15, 100.0, 'Using filesort')
+#
+#   Key columns:
+#     type='ref'       → index lookup (good)
+#     key='blog_post_status_idx' → which index MySQL chose
+#     rows=15          → estimated rows to scan
+#     Extra='Using filesort' → MySQL must sort results (consider a composite index)
+```
+
+#### Handling MySQL-Specific Errors
+
+```python
+from django.db import IntegrityError, OperationalError
+
+# Handle duplicate entry (e.g., unique constraint violation)
+try:
+    Post.objects.create(title='Duplicate', slug='existing-slug')
+except IntegrityError as e:
+    if 'Duplicate entry' in str(e):
+        #   MySQL error 1062: Duplicate entry 'existing-slug' for key 'blog_post.slug'
+        print('A post with this slug already exists.')
+    else:
+        raise
+
+# Handle connection errors
+try:
+    Post.objects.count()
+except OperationalError as e:
+    error_code = e.args[0] if e.args else None
+    if error_code == 2003:
+        #   MySQL error 2003: Can't connect to MySQL server
+        print('Cannot connect to MySQL. Is the server running?')
+    elif error_code == 1045:
+        #   MySQL error 1045: Access denied for user
+        print('Database credentials are incorrect.')
+    else:
+        raise
 ```
 
 ---
@@ -1452,6 +1568,23 @@ class Post(models.Model):
         ]
 ```
 
+#### MySQL Index Inspection
+
+Verify your indexes directly in MySQL:
+
+```sql
+SHOW INDEX FROM blog_post;
+-- Displays all indexes on the table, including:
+--   Key_name       → index name
+--   Column_name    → indexed column
+--   Index_type     → BTREE (default for InnoDB) or FULLTEXT
+--   Cardinality    → estimated number of unique values (higher = more selective)
+
+EXPLAIN SELECT * FROM blog_post WHERE status = 'published' ORDER BY publish_date DESC;
+-- Check the 'key' column to verify MySQL is using the expected index
+-- If 'key' is NULL, MySQL is doing a full table scan — add an index!
+```
+
 ---
 
 ## Part 9: Advanced Features
@@ -1752,6 +1885,27 @@ class Task(models.Model):
         ordering = ['due_date', '-priority']
 ```
 
+**MySQL settings for this project:**
+
+```python
+# settings.py
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'taskmanager',
+        'USER': os.environ.get('DB_USER', 'myuser'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
+            #   charset=utf8mb4 → ensures the connection uses full Unicode
+        },
+    }
+}
+```
+
 ### Project: Blog Platform
 
 Build a production-quality blog:
@@ -1762,9 +1916,54 @@ Build a production-quality blog:
 - Category and tag filtering
 - Comment system with moderation
 - RSS feed
-- Full-text search
+- Full-text search using MySQL
 - Admin customization
 - REST API
+- MySQL backend with InnoDB engine
+
+**MySQL full-text search example:**
+
+```python
+# blog/models.py — add a full-text index for MySQL search
+class Post(models.Model):
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    # ... other fields ...
+
+    class Meta:
+        indexes = [
+            # MySQL FULLTEXT index for fast text search
+            # Requires InnoDB engine (default in MySQL 5.6+)
+        ]
+
+# blog/views.py — use MySQL's MATCH ... AGAINST syntax
+from django.db.models import Value
+from django.db import connection
+
+def search_posts(request):
+    query = request.GET.get('q', '')
+    if query:
+        # Use MySQL's native full-text search for better performance
+        posts = Post.objects.raw(
+            "SELECT * FROM blog_post "
+            "WHERE MATCH(title, body) AGAINST (%s IN BOOLEAN MODE) "
+            "AND status = 'published' "
+            "ORDER BY MATCH(title, body) AGAINST (%s IN BOOLEAN MODE) DESC",
+            [query, query]
+        )
+        #   MATCH ... AGAINST → MySQL full-text search
+        #   IN BOOLEAN MODE   → supports +required -excluded "exact phrase"
+        #   Results are ranked by relevance score
+    else:
+        posts = Post.objects.filter(status='published')
+    return render(request, 'blog/search.html', {'posts': posts, 'query': query})
+```
+
+> **MySQL note:** Run this SQL to add the FULLTEXT index:
+> ```sql
+> ALTER TABLE blog_post ADD FULLTEXT INDEX ft_title_body (title, body);
+> -- Requires InnoDB (MySQL 5.6+) or MyISAM engine
+> ```
 
 ### Deploying with Gunicorn and Nginx
 
@@ -1874,13 +2073,21 @@ services:
       MYSQL_ROOT_PASSWORD: rootpassword
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    #   healthcheck → Docker waits until MySQL is ready before starting 'web'
 
   web:
     build: .
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    #   condition: service_healthy → waits for MySQL health check to pass
     environment:
       DB_HOST: db
       DB_NAME: mydatabase
@@ -1984,6 +2191,50 @@ volumes:
 | `.prefetch_related()` | Separate query + Python join | `Category.objects.prefetch_related('posts')` |
 | `.aggregate()` | `SELECT AGG(...)` | `Post.objects.aggregate(Count('id'))` |
 | `.annotate()` | `SELECT ..., AGG(...) AS ...` | `Category.objects.annotate(n=Count('posts'))` |
+
+### MySQL Quick Reference
+
+| Command / SQL | Description |
+|---|---|
+| `mysql -u myuser -p mydatabase` | Connect to a MySQL database from the terminal |
+| `SHOW DATABASES;` | List all databases |
+| `SHOW TABLES;` | List all tables in the current database |
+| `DESCRIBE blog_post;` | Show column definitions for a table |
+| `SHOW INDEX FROM blog_post;` | List all indexes on a table |
+| `SHOW CREATE TABLE blog_post;` | Display the full CREATE TABLE statement |
+| `EXPLAIN SELECT ...;` | Show the query execution plan |
+| `SELECT VERSION();` | Display the MySQL server version |
+| `SHOW PROCESSLIST;` | List active connections and queries |
+| `SET sql_mode='STRICT_TRANS_TABLES';` | Enable strict mode (recommended for Django) |
+
+### MySQL Data Types (Django ↔ MySQL)
+
+| Django Field | MySQL Type | Notes |
+|---|---|---|
+| `AutoField` | `INT AUTO_INCREMENT` | Legacy default primary key |
+| `BigAutoField` | `BIGINT AUTO_INCREMENT` | Default primary key (Django 3.2+) |
+| `CharField(max_length=N)` | `VARCHAR(N)` | Max 65,535 bytes per row |
+| `TextField` | `LONGTEXT` | Up to 4 GB |
+| `IntegerField` | `INT` | -2,147,483,648 to 2,147,483,647 |
+| `BigIntegerField` | `BIGINT` | -9.2×10¹⁸ to 9.2×10¹⁸ |
+| `FloatField` | `DOUBLE` | Approximate precision |
+| `DecimalField` | `DECIMAL(M,D)` | Exact precision — use for money |
+| `BooleanField` | `TINYINT(1)` | `0` = False, `1` = True |
+| `DateField` | `DATE` | `YYYY-MM-DD` |
+| `DateTimeField` | `DATETIME(6)` | Microsecond precision |
+| `DurationField` | `BIGINT` | Stored as microseconds |
+| `JSONField` | `JSON` | Native JSON (MySQL 5.7+) |
+| `BinaryField` | `LONGBLOB` | Raw binary data |
+
+### MySQL Connection Troubleshooting
+
+| Error | Cause | Fix |
+|---|---|---|
+| `(2003) Can't connect to MySQL server` | MySQL is not running | Start MySQL: `sudo systemctl start mysql` |
+| `(1045) Access denied for user` | Wrong username or password | Verify credentials in `settings.py` |
+| `(1049) Unknown database` | Database does not exist | Create it: `CREATE DATABASE mydatabase;` |
+| `(2002) Connection refused` | Wrong host or port | Check `HOST` and `PORT` in settings |
+| `(1071) Specified key was too long` | Index on a column with `utf8mb4` exceeds 767 bytes | Use `max_length=191` or set `innodb_large_prefix=ON` |
 
 ---
 

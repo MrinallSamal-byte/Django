@@ -6,9 +6,9 @@ This repository contains a comprehensive Django tutorial using MySQL as the data
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- MySQL 5.7 or higher
-- pip (Python package manager)
+- **Python 3.8+** — [python.org/downloads](https://www.python.org/downloads/)
+- **MySQL 5.7+** — [dev.mysql.com/downloads](https://dev.mysql.com/downloads/mysql/)
+- **pip** — included with Python 3.4+
 
 ### Setup
 
@@ -27,15 +27,33 @@ This repository contains a comprehensive Django tutorial using MySQL as the data
    venv\Scripts\activate      # Windows
    ```
 
-3. **Install dependencies**
+3. **Install Python dependencies**
 
    ```bash
    pip install django mysqlclient
    ```
 
-4. **Set up MySQL**
+   > If `mysqlclient` fails to install, install the MySQL development headers first:
+   > ```bash
+   > # Ubuntu/Debian
+   > sudo apt install libmysqlclient-dev
+   > # macOS (Homebrew)
+   > brew install mysql pkg-config
+   > ```
 
-   Create a database and user in MySQL:
+4. **Install and start MySQL server**
+
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install mysql-server
+   sudo systemctl start mysql
+
+   # macOS (Homebrew)
+   brew install mysql
+   brew services start mysql
+   ```
+
+5. **Create the database and user**
 
    ```sql
    CREATE DATABASE mydatabase CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -44,7 +62,7 @@ This repository contains a comprehensive Django tutorial using MySQL as the data
    FLUSH PRIVILEGES;
    ```
 
-5. **Run migrations and start the server**
+6. **Run migrations and start the server**
 
    ```bash
    python manage.py migrate
@@ -53,19 +71,19 @@ This repository contains a comprehensive Django tutorial using MySQL as the data
 
 ## Tutorial Contents
 
-The full tutorial is in [TUTORIAL.md](TUTORIAL.md). It covers the following parts:
+The full tutorial is in [TUTORIAL.md](TUTORIAL.md). Click any topic below to jump directly to that section:
 
-| Part | Topic | Link |
-|------|-------|------|
-| 1 | **Basics** — Django introduction, MVT architecture, framework comparison | [Part 1: Basics](TUTORIAL.md#part-1-basics) |
-| 2 | **Installation & Setup** — Python, virtual environments, MySQL configuration | [Part 2: Installation & Setup](TUTORIAL.md#part-2-installation--setup) |
-| 3 | **Django Fundamentals** — Projects vs apps, settings, URL routing | [Part 3: Django Fundamentals](TUTORIAL.md#part-3-django-fundamentals) |
-| 4 | **Models & Databases** — Models, fields, relationships, migrations, QuerySet API | [Part 4: Models & Databases](TUTORIAL.md#part-4-models--databases) |
-| 5 | **Views & Templates** — FBVs, CBVs, template language, inheritance, static files | [Part 5: Views & Templates](TUTORIAL.md#part-5-views--templates) |
-| 6 | **Forms & User Input** — Django forms, ModelForms, validation, file uploads | [Part 6: Forms & User Input](TUTORIAL.md#part-6-forms--user-input) |
-| 7 | **Authentication & Security** — Users, permissions, CSRF/XSS protection, HTTPS | [Part 7: Authentication & Security](TUTORIAL.md#part-7-authentication--security) |
-| 8 | **Performance Optimization** — Query optimization, caching, pagination, indexing | [Part 8: Performance Optimization](TUTORIAL.md#part-8-performance-optimization) |
-| 9 | **Advanced Features** — DRF, signals, management commands, middleware, Celery | [Part 9: Advanced Features](TUTORIAL.md#part-9-advanced-features) |
-| 10 | **Real-World Projects & Deployment** — Task manager, blog, Gunicorn, Docker | [Part 10: Real-World Projects & Deployment](TUTORIAL.md#part-10-real-world-projects--deployment) |
+| Part | Topic | Key Sections |
+|------|-------|--------------|
+| 1 | [**Basics**](TUTORIAL.md#part-1-basics) | [What is Django?](TUTORIAL.md#what-is-django) · [MVT Architecture](TUTORIAL.md#the-mvt-architecture) · [Django vs Other Frameworks](TUTORIAL.md#django-vs-other-frameworks) |
+| 2 | [**Installation & Setup**](TUTORIAL.md#part-2-installation--setup) | [Installing Python](TUTORIAL.md#installing-python) · [Virtual Environments](TUTORIAL.md#setting-up-a-virtual-environment) · [Django & MySQL Client](TUTORIAL.md#installing-django-and-mysql-client) · [Configuring MySQL](TUTORIAL.md#configuring-mysql) |
+| 3 | [**Django Fundamentals**](TUTORIAL.md#part-3-django-fundamentals) | [Project vs App](TUTORIAL.md#project-vs-app) · [Settings](TUTORIAL.md#settings-deep-dive) · [Request/Response Cycle](TUTORIAL.md#the-requestresponse-cycle) · [URL Routing](TUTORIAL.md#url-routing) |
+| 4 | [**Models & Databases**](TUTORIAL.md#part-4-models--databases) | [Defining Models](TUTORIAL.md#defining-models) · [Field Types](TUTORIAL.md#field-types-and-options) · [Relationships](TUTORIAL.md#relationships) · [Migrations](TUTORIAL.md#migrations) · [QuerySet API](TUTORIAL.md#queryset-api) · [MySQL SQL Output](TUTORIAL.md#viewing-mysql-query-output-via-the-orm) · [MySQL Errors](TUTORIAL.md#handling-mysql-specific-errors) |
+| 5 | [**Views & Templates**](TUTORIAL.md#part-5-views--templates) | [Function-Based Views](TUTORIAL.md#function-based-views) · [Class-Based Views](TUTORIAL.md#class-based-views) · [Template Language](TUTORIAL.md#template-language) · [Inheritance](TUTORIAL.md#template-inheritance) · [Static Files](TUTORIAL.md#static-files-and-media) |
+| 6 | [**Forms & User Input**](TUTORIAL.md#part-6-forms--user-input) | [Django Forms](TUTORIAL.md#django-forms) · [ModelForms](TUTORIAL.md#modelforms) · [Validation](TUTORIAL.md#validation) · [File Uploads](TUTORIAL.md#file-uploads) |
+| 7 | [**Authentication & Security**](TUTORIAL.md#part-7-authentication--security) | [User Auth](TUTORIAL.md#user-authentication) · [Permissions](TUTORIAL.md#permissions-and-groups) · [CSRF/XSS/SQL Injection](TUTORIAL.md#csrf-xss-and-sql-injection-protection) · [HTTPS](TUTORIAL.md#https-and-security-middleware) |
+| 8 | [**Performance Optimization**](TUTORIAL.md#part-8-performance-optimization) | [Query Optimization](TUTORIAL.md#database-query-optimization) · [Caching](TUTORIAL.md#caching) · [Pagination](TUTORIAL.md#pagination) · [MySQL Indexing](TUTORIAL.md#database-indexing) |
+| 9 | [**Advanced Features**](TUTORIAL.md#part-9-advanced-features) | [REST Framework](TUTORIAL.md#django-rest-framework) · [Signals](TUTORIAL.md#signals) · [Management Commands](TUTORIAL.md#custom-management-commands) · [Middleware](TUTORIAL.md#middleware) · [Celery](TUTORIAL.md#celery-and-async-tasks) |
+| 10 | [**Real-World Projects & Deployment**](TUTORIAL.md#part-10-real-world-projects--deployment) | [Task Manager](TUTORIAL.md#project-task-manager) · [Blog Platform](TUTORIAL.md#project-blog-platform) · [Gunicorn & Nginx](TUTORIAL.md#deploying-with-gunicorn-and-nginx) · [Docker + MySQL](TUTORIAL.md#docker-deployment) |
 
-Additional sections: [Practice Exercises](TUTORIAL.md#practice-exercises) · [Cheat Sheet](TUTORIAL.md#cheat-sheet) · [Further Reading](TUTORIAL.md#further-reading)
+**Quick links:** [Practice Exercises](TUTORIAL.md#practice-exercises) · [Cheat Sheet](TUTORIAL.md#cheat-sheet) · [MySQL Quick Reference](TUTORIAL.md#mysql-quick-reference) · [Further Reading](TUTORIAL.md#further-reading)
